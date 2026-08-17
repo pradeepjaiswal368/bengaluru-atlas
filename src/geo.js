@@ -223,6 +223,7 @@ export const PARKS = [
   {
     id: "iisc",
     name: "IISc Campus",
+    kind: "campus",
     label: true,
     ring: [
       [13.0292, 77.5588],
@@ -236,6 +237,7 @@ export const PARKS = [
   {
     id: "palace",
     name: "Palace Grounds",
+    kind: "campus",
     ring: [
       [13.0038, 77.5852],
       [13.0062, 77.5928],
@@ -248,6 +250,7 @@ export const PARKS = [
   {
     id: "gkvk",
     name: "GKVK Campus",
+    kind: "campus",
     ring: [
       [13.0862, 77.5688],
       [13.0898, 77.5806],
@@ -260,6 +263,7 @@ export const PARKS = [
   {
     id: "turahalli",
     name: "Turahalli Forest",
+    kind: "forest",
     ring: [
       [12.8968, 77.5182],
       [12.8998, 77.5288],
@@ -272,6 +276,7 @@ export const PARKS = [
   {
     id: "bannerghatta-edge",
     name: "Bannerghatta Reserve",
+    kind: "forest",
     ring: [
       [12.8382, 77.5642],
       [12.8420, 77.5788],

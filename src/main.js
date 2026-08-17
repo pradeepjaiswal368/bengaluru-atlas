@@ -28,6 +28,7 @@ import { LabelLayer } from "./labels.js";
 import { createPins, setPinArea, setPinGlowScale, setPinTheme, updatePins } from "./pins.js";
 import { createStage } from "./scene.js";
 import { createTraffic } from "./traffic.js";
+import { createPlane } from "./plane.js";
 import { createDriveMode } from "./drive.js";
 
 // ── DOM handles ─────────────────────────────────────────────────────────────
@@ -65,6 +66,11 @@ const areaLabelById = new Map(AREAS.map((a) => [a.id, a.shortLabel]));
 
 const stage = createStage(canvas);
 const { renderer, scene, camera, rig } = stage;
+
+// The lone airliner — scenery that orbits high above the city, kept out of
+// the city group so a theme rebuild doesn't replace it mid-flight.
+const plane = createPlane();
+scene.add(plane.group);
 
 // ── Theme ───────────────────────────────────────────────────────────────────
 // The bootstrap script in index.html has already stamped data-theme on <html>
@@ -114,6 +120,7 @@ function applyTheme(theme, { persist = false } = {}) {
   setPinTheme(pins, theme);
   traffic.setTheme(theme);
   drive.setTheme(theme);
+  plane.setTheme(theme);
 
   const toggle = document.getElementById("themeToggle");
   if (toggle) {
@@ -982,6 +989,7 @@ function frame() {
   updatePins(pins, dt, camera);
   const viewDistance = drive.active ? drive.distance : rig.distance;
   traffic.update(dt, viewDistance);
+  plane.update(dt);
   labels.update(camera, stage.size, viewDistance);
   stage.render();
 
@@ -1045,7 +1053,7 @@ document.querySelector(".brand")?.addEventListener("click", (event) => {
 
 // Debug handle. Deliberate and documented in CONTRIBUTING: lets you inspect
 // camera state or pin placement from the console (`__atlas.rig.distance`, …).
-window.__atlas = { rig, state, stage, pins, traffic, labels, drive };
+window.__atlas = { rig, state, stage, pins, traffic, labels, drive, plane };
 
 // Fade the loader once the first real frame is on screen.
 requestAnimationFrame(() => {

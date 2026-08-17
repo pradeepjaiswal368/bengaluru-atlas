@@ -48,7 +48,7 @@ const KINDS = [
     size: [0.3, 0.17, 0.62],
     // Fleet scale: the parts are modelled at a base size; this multiplies the
     // whole vehicle (geometry + part offsets) so the proportions stay intact.
-    scale: 1.35,
+    scale: 2.0,
     speedFactor: 1,
     day: [0xf0efec, 0xc7cbd2, 0x99a0a9, 0x2b333f, 0x8e2f28, 0x2d4a76],
   },
@@ -56,7 +56,7 @@ const KINDS = [
     id: "scooter",
     share: 0.35,
     size: [0.1, 0.15, 0.3],
-    scale: 1.35,
+    scale: 2.0,
     speedFactor: 0.88,
     wobble: true, // two-wheelers thread the lane rather than hold it
     day: [0x23272e, 0x8e2f28, 0x2b5038, 0x5a616b, 0x8a8f96],
@@ -65,7 +65,7 @@ const KINDS = [
     id: "auto",
     share: 0.12,
     size: [0.26, 0.22, 0.46],
-    scale: 1.35,
+    scale: 2.0,
     speedFactor: 0.78,
     // Classic cab livery: bright taxi yellow — the same #f5c518 accent the
     // HUD wears, so the taxis read as part of the brand.
@@ -75,7 +75,7 @@ const KINDS = [
     id: "truck",
     share: 0.08,
     size: [0.44, 0.4, 1.2],
-    scale: 1.25,
+    scale: 1.9,
     speedFactor: 0.85,
     trunkOnly: true, // box trucks stick to the ring road and arterials
     // Classic Tata-fleet cab: white/cream up front…
@@ -88,7 +88,7 @@ const KINDS = [
     id: "bus",
     share: 0.05,
     size: [0.42, 0.42, 1.5],
-    scale: 1.25,
+    scale: 1.9,
     speedFactor: 0.72,
     trunkOnly: true, // BMTC service runs the majors, not the by-lanes
     day: [0xf4f6f8, 0xe8ecf2, 0xdbe4ee],
