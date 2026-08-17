@@ -112,8 +112,10 @@ const PAVEMENT = Object.fromEntries(
 );
 
 // Flattened segment list, built once. Each segment carries both radii: the
-// corridor (for the centre test) and the pavement (for the footprint test).
-const ROAD_SEGMENTS = (() => {
+// corridor (for the centre test) and the pavement (for the footprint test),
+// plus its unit tangent — the building placer uses the tangent to line
+// buildings up along the street instead of spinning them to global axes.
+export const ROAD_SEGMENTS = (() => {
   const segments = [];
   for (const road of ROADS) {
     const pts = ringToWorld(road.path);
@@ -122,6 +124,9 @@ const ROAD_SEGMENTS = (() => {
     const pavement = PAVEMENT[road.tier] ?? PAVEMENT.street;
     const r2 = radius * radius;
     for (let i = 0; i < pts.length - 1; i++) {
+      const dx = pts[i + 1].x - pts[i].x;
+      const dz = pts[i + 1].z - pts[i].z;
+      const len = Math.hypot(dx, dz) || 1;
       segments.push({
         ax: pts[i].x,
         az: pts[i].z,
@@ -129,6 +134,10 @@ const ROAD_SEGMENTS = (() => {
         bz: pts[i + 1].z,
         r2,
         pavement,
+        corridor: radius,
+        tier: road.tier,
+        tx: dx / len,
+        tz: dz / len,
       });
     }
   }
@@ -159,6 +168,30 @@ export function nearRoad(x, z) {
     if (segmentDistanceSq(x, z, s.ax, s.az, s.bx, s.bz) < s.r2) return true;
   }
   return false;
+}
+
+/**
+ * Nearest road to a point: its distance, unit tangent, tier and corridor
+ * radius. Buildings snap their rotation to the tangent so the massing reads
+ * as blocks that follow the actual streets, not a global grid.
+ */
+export function nearestRoad(x, z) {
+  let best = null;
+  let bestD2 = Infinity;
+  for (const s of ROAD_SEGMENTS) {
+    const d2 = segmentDistanceSq(x, z, s.ax, s.az, s.bx, s.bz);
+    if (d2 < bestD2) {
+      bestD2 = d2;
+      best = s;
+    }
+  }
+  return {
+    distance: Math.sqrt(bestD2),
+    tx: best.tx,
+    tz: best.tz,
+    tier: best.tier,
+    corridor: best.corridor,
+  };
 }
 
 /**

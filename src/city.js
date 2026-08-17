@@ -9,6 +9,7 @@
  */
 
 import * as THREE from "three";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import {
   BOARD,
   DISTRICTS,
@@ -24,10 +25,12 @@ import {
   project,
 } from "./geo.js";
 import {
+  ROAD_SEGMENTS,
   hashSeed,
   landmarkAnchor,
   mulberry32,
   nearRoad,
+  nearestRoad,
   onRoadSurface,
   pointInRing,
   ringArea,
@@ -51,6 +54,8 @@ export const PALETTES = {
     parkRim: 0x4fae66,
     airfield: 0x222732,
     airfieldRim: 0x4a5262,
+    tree: 0x2f6b3f,
+    treeTrunk: 0x55402e,
     roadRing: 0x6a7789,
     roadArterial: 0x4d5768,
     roadStreet: 0x3a424f,
@@ -79,6 +84,8 @@ export const PALETTES = {
     parkRim: 0x5aa044,
     airfield: 0xd9d5c9,
     airfieldRim: 0xa9a494,
+    tree: 0x5c9a52,
+    treeTrunk: 0x7a5c3e,
     roadRing: 0x878e9a,
     roadArterial: 0xa4a9b2,
     roadStreet: 0xbdc0c6,
@@ -141,6 +148,72 @@ function makeWindowTexture(rng) {
 }
 
 /**
+ * Seeded grass texture, tinted from the theme's park colour. Short mottled
+ * strokes read as turf at map scale instead of the flat fill — and because
+ * ShapeGeometry UVs are in world units, the same texture tiles at a
+ * consistent real size in every green polygon regardless of its shape.
+ *
+ * `kind` follows the map: "forest" reads as dense dark undergrowth, "campus"
+ * as a kept lighter lawn, and plain parks sit in between. Airfields stay flat
+ * (no texture at all).
+ */
+function makeGrassTexture(rng, kind = "park") {
+  const size = 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+
+  const base = new THREE.Color(PALETTE.park);
+  const light = base.clone().lerp(new THREE.Color(1, 1, 1), 0.22);
+  const dark = base.clone().lerp(new THREE.Color(0, 0, 0), 0.3);
+  // Forest floor is markedly darker and denser than a city lawn.
+  const shade = kind === "forest" ? 0.5 : kind === "campus" ? 0.14 : 0.3;
+  const mottle = base.clone().lerp(new THREE.Color(0, 0, 0), shade);
+  // Color stores linear values; getHexString back to sRGB for the canvas,
+  // otherwise the turf renders a gamma-corrected shade too dark.
+  const hex = (c) => `#${c.getHexString(THREE.SRGBColorSpace)}`;
+
+  ctx.fillStyle = hex(base);
+  ctx.fillRect(0, 0, size, size);
+
+  // Loose mottling — uneven turf, not a flat fill. Forests get nearly solid
+  // undergrowth; campuses keep a cleaner lawn.
+  const mottleCount = kind === "forest" ? 420 : kind === "campus" ? 70 : 140;
+  for (let i = 0; i < mottleCount; i++) {
+    const c = rng() < 0.5 ? light : kind === "forest" ? mottle : dark;
+    ctx.fillStyle = hex(c);
+    const w = 2 + rng() * 3;
+    const h = 2 + rng() * 4;
+    ctx.fillRect(rng() * size, rng() * size, w, h);
+  }
+
+  // A scatter of short blade strokes so it reads as grass, not noise.
+  const bladeCount = kind === "forest" ? 520 : kind === "campus" ? 120 : 260;
+  ctx.lineWidth = 1;
+  for (let i = 0; i < bladeCount; i++) {
+    const c = rng() < 0.6 ? light : kind === "forest" ? mottle : dark;
+    ctx.strokeStyle = hex(c);
+    ctx.globalAlpha = 0.35 + rng() * 0.5;
+    const x = rng() * size;
+    const y = rng() * size;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + (rng() - 0.5) * 3, y + 2 + rng() * 3);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  return texture;
+}
+
+/**
  * Collapses the top and bottom face UVs onto a black texel, so the window map
  * only lands on the walls. Without this every rooftop wears the same grid —
  * and since the camera looks down at the board, that was the single biggest
@@ -167,6 +240,7 @@ const Y = {
   road: 0.09,
   metro: 0.65,
   building: 0.1,
+  tree: 0.07,
 };
 
 // ── Mesh helpers ────────────────────────────────────────────────────────────
@@ -187,6 +261,7 @@ function polygonMesh(worldRing, color, y, opts = {}) {
 
   const material = new THREE.MeshStandardMaterial({
     color,
+    map: opts.map ?? null,
     roughness: opts.roughness ?? 0.92,
     metalness: opts.metalness ?? 0.02,
     side: THREE.DoubleSide,
@@ -302,12 +377,28 @@ function buildDistrictFloors() {
 function buildParks() {
   const group = new THREE.Group();
   group.name = "parks";
+
+  // One grass texture per green kind. ShapeGeometry UVs are in world units,
+  // so a fixed repeat gives the same real turf scale in every polygon — a
+  // 2-unit tile of mottled grass, repeated across each park.
+  const kinds = ["park", "campus", "forest"];
+  const grass = Object.fromEntries(
+    kinds.map((kind) => {
+      const texture = makeGrassTexture(mulberry32(hashSeed(`grass-${kind}`)), kind);
+      texture.repeat.set(0.5, 0.5);
+      return [kind, texture];
+    })
+  );
+
   for (const park of PARKS) {
     const ring = ringToWorld(park.ring);
     const isAirfield = park.kind === "airfield";
+    const kind = grass[park.kind] ? park.kind : "park";
     group.add(
       polygonMesh(ring, isAirfield ? PALETTE.airfield : PALETTE.park, Y.park, {
         roughness: 0.98,
+        // Airfields stay flat — only real green spaces read as turf.
+        map: isAirfield ? null : grass[kind],
       })
     );
     group.add(
@@ -317,11 +408,203 @@ function buildParks() {
   return group;
 }
 
+/**
+ * Street and park trees, instanced into one draw call.
+ *
+ * Parks get a seeded scatter of canopy so the green polygons read as real
+ * gardens instead of empty shapes; every road gets avenue trees planted on
+ * the verge — between the asphalt and the frontage buildings — so streets
+ * read as tree-lined, which is very much the Bengaluru look.
+ */
+function buildTrees() {
+  const group = new THREE.Group();
+  group.name = "trees";
+
+  // A tree is a trunk + a low-poly round canopy, merged into one geometry so
+  // the whole green layer is a single instanced draw call. Vertex colours
+  // separate trunk from leaves (a theme-aware tint, mixed with instance
+  // colours for per-tree variation below).
+  const trunk = new THREE.CylinderGeometry(0.11, 0.16, 0.55, 6).toNonIndexed();
+  trunk.translate(0, 0.275, 0);
+  // IcosahedronGeometry is already non-indexed.
+  const canopy = new THREE.IcosahedronGeometry(0.6, 1);
+  canopy.translate(0, 0.95, 0);
+  canopy.scale(1, 0.85, 1);
+  const geometry = mergeGeometries([trunk, canopy], false);
+
+  const pos = geometry.attributes.position;
+  const trunkColour = new THREE.Color(PALETTE.treeTrunk);
+  const leafColour = new THREE.Color(PALETTE.tree);
+  const colours = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    const c = pos.getY(i) < 0.6 ? trunkColour : leafColour;
+    colours[i * 3] = c.r;
+    colours[i * 3 + 1] = c.g;
+    colours[i * 3 + 2] = c.b;
+  }
+  geometry.setAttribute("color", new THREE.BufferAttribute(colours, 3));
+
+  // ── Placements ──
+  const spots = []; // { x, z, scale, shade }
+
+  // Green-area canopy: seeded scatter inside each ring, density following the
+  // map — forests are near-solid canopy, campuses and parks are groves, and
+  // every lake gets a collar of shore trees.
+  const forestDensity = { park: 0.9, campus: 1.3, forest: 3.6 };
+  for (const park of PARKS) {
+    const ring = ringToWorld(park.ring);
+    const bounds = ringBounds(ring);
+    const area = ringArea(ring);
+    const density = forestDensity[park.kind] ?? 0.9;
+    const target = Math.min(260, Math.max(6, Math.round(area * density)));
+    const rng = mulberry32(hashSeed(`park-trees:${park.id}`));
+    let placed = 0;
+    let attempts = 0;
+    while (placed < target && attempts < target * 30) {
+      attempts++;
+      const x = bounds.minX + rng() * (bounds.maxX - bounds.minX);
+      const z = bounds.minZ + rng() * (bounds.maxZ - bounds.minZ);
+      if (!pointInRing(x, z, ring)) continue;
+      if (nearRoad(x, z)) continue;
+      spots.push({ x, z, scale: 0.8 + rng() * 0.7, shade: rng() });
+      placed++;
+    }
+  }
+
+  // Lake shores: a ring of trees in the shore band — the 90 m collar between
+  // the water's edge and the dilated grass, which is exactly where the
+  // parkland reads. A point is in the band when it's inside the dilated ring
+  // but outside the water itself.
+  const shoreTrees = mulberry32(hashSeed("shore-trees"));
+  const shoreWidth = metres(90);
+  for (const lake of LAKES) {
+    const ring = ringToWorld(lake.ring);
+    const bounds = ringBounds(ring);
+    const area = ringArea(ring);
+    const target = Math.min(40, Math.max(4, Math.round(area * 0.35)));
+    const cx = ring.reduce((s, p) => s + p.x, 0) / ring.length;
+    const cz = ring.reduce((s, p) => s + p.z, 0) / ring.length;
+    const dilated = ring.map((p) => {
+      const dx = p.x - cx;
+      const dz = p.z - cz;
+      const len = Math.hypot(dx, dz) || 1;
+      return { x: p.x + (dx / len) * shoreWidth, z: p.z + (dz / len) * shoreWidth };
+    });
+    let placed = 0;
+    let attempts = 0;
+    while (placed < target && attempts < target * 30) {
+      attempts++;
+      const x = bounds.minX + shoreTrees() * (bounds.maxX - bounds.minX);
+      const z = bounds.minZ + shoreTrees() * (bounds.maxZ - bounds.minZ);
+      // In the collar (dilated) but not in the water: that's the shore band.
+      if (!pointInRing(x, z, dilated)) continue;
+      if (pointInRing(x, z, ring)) continue;
+      spots.push({ x, z, scale: 0.7 + shoreTrees() * 0.5, shade: shoreTrees() });
+      placed++;
+    }
+  }
+
+  // Avenue trees: walk each road segment and plant on both verges, offset
+  // just past the asphalt (pavement minus the vehicle allowance) and inside
+  // the corridor, so they sit between the road edge and the frontage line.
+  const avenueSpacing = 2.4;
+  const avenueRng = mulberry32(hashSeed("avenue-trees"));
+  const lakeRings = LAKES.map((l) => ringToWorld(l.ring));
+  for (const seg of ROAD_SEGMENTS) {
+    const len = Math.hypot(seg.bx - seg.ax, seg.bz - seg.az);
+    if (len < 1.2) continue;
+    // Normal to the segment (perpendicular to its tangent).
+    const nx = -seg.tz;
+    const nz = seg.tx;
+    const roadHalf = seg.pavement - 0.34; // pavement includes the vehicle allowance
+    const offset = roadHalf + 0.45;
+    for (let u = avenueSpacing; u < len - 0.4; u += avenueSpacing) {
+      const t = u / len;
+      const px = seg.ax + (seg.bx - seg.ax) * t;
+      const pz = seg.az + (seg.bz - seg.az) * t;
+      for (const side of [-1, 1]) {
+        const x = px + nx * offset * side;
+        const z = pz + nz * offset * side;
+        if (lakeRings.some((lake) => pointInRing(x, z, lake))) continue;
+        spots.push({ x, z, scale: 0.85 + avenueRng() * 0.5, shade: avenueRng() });
+      }
+    }
+  }
+
+  const material = new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    color: 0xffffff,
+    roughness: 0.9,
+    metalness: 0,
+  });
+  const mesh = new THREE.InstancedMesh(geometry, material, spots.length);
+  mesh.name = "trees";
+  mesh.castShadow = true;
+
+  const matrix = new THREE.Matrix4();
+  const quaternion = new THREE.Quaternion();
+  const position = new THREE.Vector3();
+  const scale = new THREE.Vector3();
+  const up = new THREE.Vector3(0, 1, 0);
+  const shade = new THREE.Color();
+
+  spots.forEach((s, i) => {
+    position.set(s.x, Y.tree, s.z);
+    quaternion.setFromAxisAngle(up, s.shade * Math.PI * 2);
+    scale.set(s.scale, s.scale * (0.9 + s.shade * 0.25), s.scale);
+    matrix.compose(position, quaternion, scale);
+    mesh.setMatrixAt(i, matrix);
+    // A neutral tonal spread so a grove doesn't read as flat colour. The
+    // theme's green already lives in the vertex colours — tinting instance
+    // colour with the palette too would square the green and go near-black
+    // in dark mode.
+    shade.setRGB(0.85 + s.shade * 0.35, 0.85 + s.shade * 0.35, 0.85 + s.shade * 0.35);
+    mesh.setColorAt(i, shade);
+  });
+
+  mesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  mesh.computeBoundingSphere();
+  group.add(mesh);
+  return group;
+}
+
 function buildLakes() {
   const group = new THREE.Group();
   group.name = "lakes";
+
+  // Bengaluru's lakes read as green oases — every one has parkland on its
+  // shore. Draw a slightly dilated grass ring beneath the water so the lake
+  // sits in a collar of turf instead of bare ground. Dilation pushes each
+  // vertex away from the centroid, which is fine for these convex-ish rings.
+  const shoreGrass = makeGrassTexture(mulberry32(hashSeed("grass-lake")), "campus");
+  shoreGrass.repeat.set(0.5, 0.5);
+
   for (const lake of LAKES) {
     const ring = ringToWorld(lake.ring);
+    // Centroid, then push every point outward by a shore width in world units.
+    let cx = 0;
+    let cz = 0;
+    for (const p of ring) {
+      cx += p.x;
+      cz += p.z;
+    }
+    cx /= ring.length;
+    cz /= ring.length;
+    const shore = metres(90);
+    const dilated = ring.map((p) => {
+      const dx = p.x - cx;
+      const dz = p.z - cz;
+      const len = Math.hypot(dx, dz) || 1;
+      return { x: p.x + (dx / len) * shore, z: p.z + (dz / len) * shore };
+    });
+
+    group.add(
+      polygonMesh(dilated, PALETTE.park, Y.park, {
+        roughness: 0.98,
+        map: shoreGrass,
+      })
+    );
     group.add(
       // Low metalness on purpose: there is no environment map in this scene, so
       // a metallic surface has nothing to reflect and renders almost black.
@@ -420,7 +703,54 @@ function buildBuildings() {
 
   const instances = [];
 
-  for (const district of DISTRICTS) {
+  // Spatial hash of placed footprints (keyed by cell) so a candidate is
+  // rejected when it would touch an existing building. Overlapping boxes
+  // were the biggest single source of the board's clutter — no real city
+  // lets towers share a footprint. The hash uses a conservative circle per
+  // building (its axis-aligned half-extent), so it stays cheap and works
+  // for any rotation.
+  const CELL = 1.6;
+  const MIN_GAP = 0.4;
+  const occupied = new Map();
+
+  // One hash for ALL districts. It used to be per-district, which let a CBD
+  // tower stand on top of the backdrop fabric — same footprint, two meshes.
+  // The named districts place first and the connective backdrop (floor:false)
+  // fills whatever space is left, so nothing ever double-builds.
+  const orderedDistricts = [...DISTRICTS].sort(
+    (a, b) => (a.floor === false ? 1 : 0) - (b.floor === false ? 1 : 0)
+  );
+
+  function collides(x, z, half) {
+    const cx = Math.floor(x / CELL);
+    const cz = Math.floor(z / CELL);
+    // Scan ±3 cells, not ±1: frontage buildings sit packed along the same
+    // road, and two wide ones can be more than one cell apart while still
+    // overlapping — a ±1 scan let them slide into each other. ±3 covers the
+    // worst pair of max-width plots (each ~1.9 half-extent) plus the gap.
+    for (let gx = cx - 3; gx <= cx + 3; gx++) {
+      for (let gz = cz - 3; gz <= cz + 3; gz++) {
+        const cell = occupied.get(`${gx}:${gz}`);
+        if (!cell) continue;
+        for (const n of cell) {
+          const dx = n.x - x;
+          const dz = n.z - z;
+          const rr = n.half + half + MIN_GAP;
+          if (dx * dx + dz * dz < rr * rr) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  function claim(x, z, half) {
+    const key = `${Math.floor(x / CELL)}:${Math.floor(z / CELL)}`;
+    let cell = occupied.get(key);
+    if (!cell) occupied.set(key, (cell = []));
+    cell.push({ x, z, half });
+  }
+
+  for (const district of orderedDistricts) {
     const ring = ringToWorld(district.ring);
     const bounds = ringBounds(ring);
     const area = ringArea(ring);
@@ -432,20 +762,71 @@ function buildBuildings() {
     const spanZ = bounds.maxZ - bounds.minZ;
     const maxRadius = Math.hypot(spanX, spanZ) / 2 || 1;
 
+    // The sparse fabric layer uses smaller plots, so it reads as low-rise
+    // surroundings rather than competing with the named cores.
+    const [plotMin, plotRange] = district.plot ?? (district.grid ? [1.3, 1.9] : [1.1, 2.6]);
+    const [minH, maxH] = district.height;
+
     let placed = 0;
     let attempts = 0;
     const attemptCap = target * 40;
 
-    // Spatial hash of placed footprints (keyed by cell) so a candidate is
-    // rejected when it would touch an existing building. Overlapping boxes
-    // were the biggest single source of the board's clutter — no real city
-    // lets towers share a footprint. The hash uses a conservative circle per
-    // building (its axis-aligned half-extent), so it stays cheap and works
-    // for any rotation.
-    const CELL = 1.6;
-    const MIN_GAP = 0.4;
-    const occupied = new Map();
+    // ── Street frontage ────────────────────────────────────────────────────
+    // Walk every road segment and drop buildings on both sides, set back from
+    // the corridor edge and oriented along the road. This is what makes the
+    // city read as streets with buildings on them instead of a random scatter
+    // that happens to avoid the asphalt. Named districts claim the frontage
+    // inside their rings first; the backdrop fills whatever is left over.
+    const setBackGap = 0.35;
+    const frontageStep = plotMin + plotRange * 0.62 + MIN_GAP;
+    for (const seg of ROAD_SEGMENTS) {
+      if (placed >= target) break;
+      // Perpendicular to the road's tangent — "left" and "right" of it.
+      const nx = -seg.tz;
+      const nz = seg.tx;
+      const len = Math.hypot(seg.bx - seg.ax, seg.bz - seg.az);
+      for (let u = 0; u <= len && placed < target; u += frontageStep) {
+        const t = len ? Math.min(1, u / len) : 0;
+        const px = seg.ax + (seg.bx - seg.ax) * t;
+        const pz = seg.az + (seg.bz - seg.az) * t;
+        for (const side of [-1, 1]) {
+          if (placed >= target) break;
+          const w = plotMin + rng() * plotRange; // along the road
+          const d = plotMin + rng() * plotRange * 0.85; // into the block
+          const off = seg.corridor + setBackGap + d / 2;
+          const x = px + nx * off * side;
+          const z = pz + nz * off * side;
+          if (!pointInRing(x, z, ring)) continue;
+          if (exclusions.some((ex) => pointInRing(x, z, ex))) continue;
+          // The building is road-aligned, so the extent that could reach THIS
+          // road is d/2 (into the block), not the footprint's diagonal — the
+          // circumradius test would reject every frontage building, since its
+          // near edge deliberately hugs the corridor.
+          if (onRoadSurface(x, z, d / 2)) continue;
+          const half = Math.max(w, d) / 2;
+          if (collides(x, z, half)) continue;
 
+          // Same height model as the interior fill: taller toward the core.
+          const distance = Math.hypot(x - centreWorld.x, z - centreWorld.z) / maxRadius;
+          const coreBias = Math.max(0, 1 - distance * 1.15);
+          const roll = Math.pow(rng(), 2.2);
+          const height = minH + (maxH - minH) * (roll * 0.62 + coreBias * 0.55);
+
+          // Align the long axis with the road, with a touch of noise.
+          const jitter = (rng() - 0.5) * 0.1;
+          const rotation = Math.atan2(-seg.tz, seg.tx) + jitter;
+
+          instances.push({ x, z, height, w, d, rotation, coreBias, tint: district.tint });
+          claim(x, z, half);
+          placed++;
+        }
+      }
+    }
+
+    // ── Interior fill ──────────────────────────────────────────────────────
+    // Random scatter for the block interiors, with every rotation following
+    // the *nearest street's* direction so whole blocks read as aligned to the
+    // road grid — even inside the block, away from any road.
     while (placed < target && attempts < attemptCap) {
       attempts++;
       const x = bounds.minX + rng() * spanX;
@@ -454,9 +835,6 @@ function buildBuildings() {
       if (exclusions.some((ex) => pointInRing(x, z, ex))) continue;
       if (nearRoad(x, z)) continue;
 
-      // The sparse fabric layer uses smaller plots, so it reads as low-rise
-      // surroundings rather than competing with the named cores.
-      const [plotMin, plotRange] = district.plot ?? (district.grid ? [1.3, 1.9] : [1.1, 2.6]);
       const w = plotMin + rng() * plotRange;
       const d = plotMin + rng() * plotRange;
       const half = Math.max(w, d) / 2;
@@ -466,53 +844,30 @@ function buildBuildings() {
       // centred just outside a narrow street's corridor still stands in the
       // road, which is exactly what drive mode drives into.
       if (onRoadSurface(x, z, Math.hypot(w, d) / 2)) continue;
-
-      // Reject candidates that would collide with an already-placed neighbour.
-      const cx = Math.floor(x / CELL);
-      const cz = Math.floor(z / CELL);
-      let blocked = false;
-      scan: for (let gx = cx - 1; gx <= cx + 1; gx++) {
-        for (let gz = cz - 1; gz <= cz + 1; gz++) {
-          const cell = occupied.get(`${gx}:${gz}`);
-          if (!cell) continue;
-          for (const n of cell) {
-            const dx = n.x - x;
-            const dz = n.z - z;
-            const rr = n.half + half + MIN_GAP;
-            if (dx * dx + dz * dz < rr * rr) {
-              blocked = true;
-              break scan;
-            }
-          }
-        }
-      }
-      if (blocked) continue;
+      if (collides(x, z, half)) continue;
 
       // Closer to the middle of the district ⇒ taller, with noise on top.
       const distance = Math.hypot(x - centreWorld.x, z - centreWorld.z) / maxRadius;
       const coreBias = Math.max(0, 1 - distance * 1.15);
-      const [minH, maxH] = district.height;
       // rng()**2.2 keeps most buildings low and lets a few spike.
       const roll = Math.pow(rng(), 2.2);
       const height = minH + (maxH - minH) * (roll * 0.62 + coreBias * 0.55);
 
-      // Street-aligned massing: boxes snap to a block direction with a little
-      // noise instead of spinning freely — freely-rotated crates were the
-      // other big clutter source. Organic districts keep occasional diagonal
-      // pockets so the fabric doesn't read as a grid it isn't.
+      // Street-aligned massing: every box follows the nearest road's tangent
+      // with a little noise, instead of spinning to a global grid the streets
+      // don't match. Organic districts keep occasional diagonal pockets so the
+      // fabric doesn't read as a grid it isn't.
+      const road = nearestRoad(x, z);
+      const base = Math.atan2(-road.tz, road.tx);
       const jitter = (rng() - 0.5) * 0.12;
       const rotation = district.grid
-        ? (rng() < 0.5 ? 0 : Math.PI / 2) + jitter
+        ? base + jitter
         : rng() < 0.78
-          ? (rng() < 0.5 ? 0 : Math.PI / 2) + jitter
-          : Math.PI / 4 + (rng() < 0.5 ? 0 : Math.PI / 2) + jitter;
+          ? base + jitter
+          : base + Math.PI / 4 + (rng() < 0.5 ? 0 : Math.PI / 2) + jitter;
 
       instances.push({ x, z, height, w, d, rotation, coreBias, tint: district.tint });
-
-      const key = `${cx}:${cz}`;
-      let cell = occupied.get(key);
-      if (!cell) occupied.set(key, (cell = []));
-      cell.push({ x, z, half });
+      claim(x, z, half);
       placed++;
     }
   }
@@ -689,13 +1044,14 @@ export function buildCity(theme = "dark") {
   const roads = buildRoads();
   const metro = buildMetro();
   const landmarks = buildLandmarks();
+  const trees = buildTrees();
   const { meshes: buildings, count: buildingCount, litCount } = buildBuildings();
 
-  city.add(ground, districtFloors, parks, lakes, roads, metro, ...buildings, landmarks);
+  city.add(ground, districtFloors, parks, lakes, roads, metro, trees, ...buildings, landmarks);
 
   return {
     city,
-    layers: { ground, districtFloors, parks, lakes, roads, metro, buildings, landmarks },
+    layers: { ground, districtFloors, parks, lakes, roads, metro, trees, buildings, landmarks },
     stats: { buildingCount, litCount },
   };
 }
