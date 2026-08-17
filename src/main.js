@@ -11,6 +11,7 @@
 import * as THREE from "three";
 import "./tokens.css";
 import "./styles.css";
+import { inject, pageview } from "@vercel/analytics";
 
 import {
   AREAS,
@@ -313,7 +314,15 @@ window.addEventListener("hashchange", () => {
     return;
   }
   applyHashFromLocation();
+  // SPA route change — report the new view to Vercel Analytics.
+  pageview({ path: location.hash || "/" });
 });
+
+// One-time boot: install the analytics snippet and record the initial view.
+// `inject` is a no-op when VERCEL_ANALYTICS_ID isn't present, so it's safe
+// to always call — it only starts collecting on a Vercel deployment.
+inject();
+pageview({ path: location.hash || "/" });
 
 // ── Area banner ─────────────────────────────────────────────────────────────
 // GTA-style location text: heavy condensed type slams in top-centre when the
