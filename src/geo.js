@@ -299,6 +299,17 @@ export const PARKS = [
 // ── Roads ───────────────────────────────────────────────────────────────────
 // tier drives width + brightness: "ring" > "arterial" > "street".
 
+/**
+ * Drawn width of each road tier, in world units. Shared: the city builder
+ * ribbons the asphalt to these, and the building placer keeps footprints off
+ * them — so widening a tier can't silently leave buildings sitting in the road.
+ */
+export const ROAD_WIDTH = {
+  ring: metres(230),
+  arterial: metres(150),
+  street: metres(85),
+};
+
 export const ROADS = [
   {
     id: "orr",
@@ -618,6 +629,18 @@ export const METRO_LINES = [
 // ── Landmarks ───────────────────────────────────────────────────────────────
 // Drawn as distinct little structures with permanent labels, to give the map
 // orientation cues that aren't startups.
+
+/**
+ * Silhouette per landmark kind. `radius` is the footprint's circumradius, used
+ * to keep landmarks off the asphalt — kept beside the dimensions it comes from
+ * so a resized silhouette can't quietly outgrow its clearance.
+ */
+export const LANDMARK_SHAPE = {
+  tower: { form: "cylinder", top: 1.05, bottom: 1.45, sides: 8, radius: 1.45 },
+  civic: { form: "box", w: 3.6, d: 2.4, radius: Math.hypot(3.6, 2.4) / 2 },
+  campus: { form: "box", w: 2.8, d: 2.8, radius: Math.hypot(2.8, 2.8) / 2 },
+  transit: { form: "cylinder", top: 1.5, bottom: 1.5, sides: 6, radius: 1.5 },
+};
 
 export const LANDMARKS = [
   { id: "vidhana-soudha", name: "Vidhana Soudha", lat: 12.9797, lng: 77.5912, kind: "civic", height: 9 },

@@ -1375,3 +1375,293 @@ body.is-focused .atlas-shell::after {
 .search-modal {
   box-shadow: var(--shadow-pop), inset 0 1px 0 var(--glass-highlight);
 }
+
+/* ── Drive mode ─────────────────────────────────────────────────────────── */
+
+/* Dim the map panels while driving so the road owns the frame; the mini-map
+   stays bright — it's the nav aid showing the player's position. */
+.is-driving .rail,
+.is-driving .detail-card {
+  opacity: 0.16;
+  pointer-events: none;
+  transition: opacity var(--t-slow) var(--ease);
+}
+
+.is-driving .area-banner {
+  display: none;
+}
+
+/* Bottom-centre chase-camera strip: speed, ride, and the exit controls. */
+.drive-hud {
+  position: absolute;
+  left: 50%;
+  bottom: var(--hud-pad);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 10px 18px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--glass-border);
+  border-top: 2px solid var(--accent);
+  background: var(--panel-raised);
+  backdrop-filter: blur(var(--blur));
+  box-shadow: var(--shadow-panel), inset 0 1px 0 var(--glass-highlight);
+  animation: drive-hud-in var(--t-med) var(--ease-out) both;
+}
+
+.drive-hud[hidden] {
+  display: none;
+}
+
+@keyframes drive-hud-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(14px);
+  }
+}
+
+.drive-hud__speed {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.drive-hud__kmh {
+  font-family: var(--font-gta);
+  font-size: 34px;
+  font-weight: 900;
+  line-height: 1;
+  color: var(--accent);
+  min-width: 66px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.drive-hud__unit {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--ink-mute);
+}
+
+.drive-hud__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.drive-hud__vehicle {
+  font-family: var(--font-gta);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: var(--ink);
+}
+
+.drive-hud__hint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  color: var(--ink-mute);
+}
+
+.drive-hud__hint kbd {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 2px 5px;
+  border-radius: var(--r-xs);
+  border: 1px solid var(--hairline);
+  background: var(--wash);
+  color: var(--ink-soft);
+}
+
+.drive-hud__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.drive-btn {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--hairline-strong);
+  background: var(--wash);
+  font-family: var(--font-gta);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease),
+    background var(--t-fast) var(--ease);
+}
+
+.drive-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent-line);
+}
+
+.drive-btn:active {
+  transform: translateY(1px);
+}
+
+.drive-btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.drive-btn--primary:hover {
+  background: var(--accent-dim);
+  border-color: var(--accent-dim);
+  color: var(--accent-ink);
+}
+
+/* Ride picker — same glass modal language as search. */
+.drive-picker {
+  width: min(380px, calc(100vw - 32px));
+  margin: 24vh auto auto;
+  padding: 0;
+  display: none;
+  flex-direction: column;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--hairline-strong);
+  border-top: 3px solid var(--accent);
+  background: var(--panel-solid);
+  box-shadow: var(--shadow-pop), inset 0 1px 0 var(--glass-highlight);
+  color: var(--ink);
+  overflow: hidden;
+}
+
+.drive-picker[open] {
+  display: flex;
+  animation: modal-in var(--t-med) var(--ease-out) both;
+}
+
+.drive-picker::backdrop {
+  background: var(--backdrop);
+  backdrop-filter: blur(3px);
+}
+
+.drive-picker__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.drive-picker__title {
+  font-family: var(--font-gta);
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+}
+
+.drive-picker__close {
+  border: 0;
+  background: none;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--ink-mute);
+  cursor: pointer;
+}
+
+.drive-picker__close:hover {
+  color: var(--ink);
+}
+
+.drive-picker__list {
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+}
+
+.ride-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "name go" "blurb go";
+  align-items: center;
+  column-gap: 10px;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease);
+}
+
+.ride-row:hover {
+  background: var(--accent-wash);
+}
+
+.ride-row__name {
+  grid-area: name;
+  font-family: var(--font-gta);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: var(--ink);
+  transition: color var(--t-fast) var(--ease);
+}
+
+.ride-row:hover .ride-row__name {
+  color: var(--accent);
+}
+
+.ride-row__blurb {
+  grid-area: blurb;
+  font-size: 11.5px;
+  color: var(--ink-mute);
+  margin-top: 2px;
+}
+
+.ride-row__go {
+  grid-area: go;
+  color: var(--accent);
+  font-size: 15px;
+}
+
+/* The player marker on the mini-map. */
+.mini-map__drive {
+  fill: var(--accent);
+  stroke: var(--accent-ink);
+  stroke-width: 1.4;
+  filter: drop-shadow(0 0 4px rgba(245, 197, 24, 0.9));
+  pointer-events: none;
+}
+
+.mini-map__drive[hidden] {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .drive-hud {
+    gap: 14px;
+    padding: 8px 12px;
+    left: 12px;
+    right: 12px;
+    transform: none;
+    justify-content: space-between;
+  }
+
+  .drive-hud__hint {
+    display: none;
+  }
+
+  @keyframes drive-hud-in-mobile {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+  }
+
+  .drive-hud {
+    animation-name: drive-hud-in-mobile;
+  }
+}

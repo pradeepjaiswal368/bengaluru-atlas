@@ -3,7 +3,14 @@
  * No three.js and no DOM in here — just numbers.
  */
 
-import { DISTRICTS, ROADS, project } from "./geo.js";
+import {
+  DISTRICTS,
+  LANDMARK_SHAPE,
+  LANDMARKS,
+  ROAD_WIDTH,
+  ROADS,
+  project,
+} from "./geo.js";
 
 /** Deterministic PRNG so the generated skyline never shifts between loads. */
 export function mulberry32(seed) {
@@ -92,16 +99,37 @@ export function clearanceAt(x, z) {
 /** Half-width of the build-free corridor each road tier keeps around itself. */
 const CORRIDOR = { ring: 2.0, arterial: 1.3, street: 0.8 };
 
-// Flattened segment list with a squared radius per segment, built once.
+/**
+ * Half-width of the asphalt itself, plus room for the widest vehicle to pass
+ * without clipping a wall. The corridor above is a *centre* setback that keeps
+ * roads reading as corridors; this is the hard edge nothing may overlap, and
+ * drive mode is what made the difference matter — the ambient fleet was always
+ * small enough to get away with it.
+ */
+const VEHICLE_HALF_WIDTH = 0.34;
+const PAVEMENT = Object.fromEntries(
+  Object.entries(ROAD_WIDTH).map(([tier, width]) => [tier, width / 2 + VEHICLE_HALF_WIDTH])
+);
+
+// Flattened segment list, built once. Each segment carries both radii: the
+// corridor (for the centre test) and the pavement (for the footprint test).
 const ROAD_SEGMENTS = (() => {
   const segments = [];
   for (const road of ROADS) {
     const pts = ringToWorld(road.path);
     if (road.closed) pts.push(pts[0]);
     const radius = CORRIDOR[road.tier] ?? CORRIDOR.street;
+    const pavement = PAVEMENT[road.tier] ?? PAVEMENT.street;
     const r2 = radius * radius;
     for (let i = 0; i < pts.length - 1; i++) {
-      segments.push({ ax: pts[i].x, az: pts[i].z, bx: pts[i + 1].x, bz: pts[i + 1].z, r2 });
+      segments.push({
+        ax: pts[i].x,
+        az: pts[i].z,
+        bx: pts[i + 1].x,
+        bz: pts[i + 1].z,
+        r2,
+        pavement,
+      });
     }
   }
   return segments;
@@ -131,6 +159,87 @@ export function nearRoad(x, z) {
     if (segmentDistanceSq(x, z, s.ax, s.az, s.bx, s.bz) < s.r2) return true;
   }
   return false;
+}
+
+/**
+ * True when a footprint centred on (x, z) reaches onto any road's asphalt.
+ * `halfExtent` is the footprint's circumradius, so the answer holds whatever
+ * angle the building is rotated to.
+ *
+ * `nearRoad` only ever tested the centre point, which a 1.1–3.7 unit wide
+ * building can pass while still paving over a 0.57-unit street — every road on
+ * the board had buildings standing in the drivable lane.
+ */
+export function onRoadSurface(x, z, halfExtent) {
+  for (const s of ROAD_SEGMENTS) {
+    const r = s.pavement + halfExtent;
+    if (segmentDistanceSq(x, z, s.ax, s.az, s.bx, s.bz) < r * r) return true;
+  }
+  return false;
+}
+
+/**
+ * Push a footprint off the asphalt, perpendicular to whichever road it sits
+ * deepest in. Procedural buildings can simply be rejected and re-rolled, but
+ * landmarks are authored at real coordinates — the Electronic City flyover
+ * really is on Hosur Road — so they get moved to the kerb instead of dropped.
+ */
+export function clearRoadSurface(x, z, halfExtent) {
+  let px = x;
+  let pz = z;
+  // Clearing one road can push the footprint into another; a few passes settle
+  // it, and the cap keeps a landmark boxed in by two roads from looping.
+  for (let pass = 0; pass < 8; pass++) {
+    let worst = null;
+    let worstDepth = 0;
+    for (const s of ROAD_SEGMENTS) {
+      const need = s.pavement + halfExtent;
+      const dx = s.bx - s.ax;
+      const dz = s.bz - s.az;
+      const lengthSq = dx * dx + dz * dz;
+      let t = lengthSq === 0 ? 0 : ((px - s.ax) * dx + (pz - s.az) * dz) / lengthSq;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const cx = s.ax + t * dx;
+      const cz = s.az + t * dz;
+      const depth = need - Math.hypot(px - cx, pz - cz);
+      if (depth > worstDepth) {
+        worstDepth = depth;
+        worst = { cx, cz, need, dx, dz };
+      }
+    }
+    if (!worst) break;
+
+    // Outward normal from the road; if the footprint is centred exactly on the
+    // centreline there is no outward direction, so use the segment's own.
+    let nx = px - worst.cx;
+    let nz = pz - worst.cz;
+    let length = Math.hypot(nx, nz);
+    if (length < 1e-4) {
+      nx = -worst.dz;
+      nz = worst.dx;
+      length = Math.hypot(nx, nz) || 1;
+    }
+    px = worst.cx + (nx / length) * (worst.need + 0.02);
+    pz = worst.cz + (nz / length) * (worst.need + 0.02);
+  }
+  return { x: px, z: pz };
+}
+
+/**
+ * Where a landmark actually stands, with road clearance applied. Resolved once
+ * and shared: the city builder places the mesh and the label layer anchors the
+ * name, and a mesh nudged without its label leaves the name over the road.
+ */
+const LANDMARK_ANCHORS = new Map(
+  LANDMARKS.map((landmark) => {
+    const p = project(landmark.lat, landmark.lng);
+    const shape = LANDMARK_SHAPE[landmark.kind] ?? LANDMARK_SHAPE.transit;
+    return [landmark.id, clearRoadSurface(p.x, p.z, shape.radius)];
+  })
+);
+
+export function landmarkAnchor(landmark) {
+  return LANDMARK_ANCHORS.get(landmark.id) ?? project(landmark.lat, landmark.lng);
 }
 
 export function clamp(value, min, max) {

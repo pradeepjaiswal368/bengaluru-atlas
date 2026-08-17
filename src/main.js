@@ -22,11 +22,13 @@ import {
   startupsByArea,
 } from "./data.js";
 import { LAKES, LANDMARKS, METRO_LINES, PARKS, ROADS, centroidOf, project } from "./geo.js";
+import { landmarkAnchor } from "./geometry.js";
 import { buildCity, disposeCity } from "./city.js";
 import { LabelLayer } from "./labels.js";
 import { createPins, setPinArea, setPinGlowScale, setPinTheme, updatePins } from "./pins.js";
 import { createStage } from "./scene.js";
 import { createTraffic } from "./traffic.js";
+import { createDriveMode } from "./drive.js";
 
 // ── DOM handles ─────────────────────────────────────────────────────────────
 
@@ -111,6 +113,7 @@ function applyTheme(theme, { persist = false } = {}) {
   setPinGlowScale(theme === "light" ? LIGHT_GLOW_SCALE : 1);
   setPinTheme(pins, theme);
   traffic.setTheme(theme);
+  drive.setTheme(theme);
 
   const toggle = document.getElementById("themeToggle");
   if (toggle) {
@@ -126,6 +129,18 @@ scene.add(pinGroup);
 
 const traffic = createTraffic();
 scene.add(traffic.group);
+
+const drive = createDriveMode({
+  scene,
+  camera,
+  // Spawn the ride on the road nearest the current map centre.
+  spawnPoint: () => rig.target,
+  minimapMarker: document.getElementById("miniMapDrive"),
+  // The mini-map is built later in this module; the closure runs only while
+  // driving, long after buildMiniMap has set its transform.
+  minimapToView: (x, z) => miniMap.toView?.(x, z),
+  getTheme: currentTheme,
+});
 
 const pinById = new Map(pins.map((p) => [p.startup.id, p]));
 const labels = new LabelLayer(labelsLayer);
@@ -156,7 +171,9 @@ function refreshLabels() {
   }
 
   for (const landmark of LANDMARKS) {
-    const p = project(landmark.lat, landmark.lng);
+    // Same anchor the city builder places the silhouette on — some landmarks are
+    // nudged off the road, and the name has to travel with them.
+    const p = landmarkAnchor(landmark);
     entries.push({
       id: `l:${landmark.id}`,
       text: landmark.name,
@@ -475,6 +492,7 @@ function pickPin() {
 }
 
 canvas.addEventListener("pointerdown", (event) => {
+  if (drive.active) return; // the chase camera owns the view while driving
   canvas.setPointerCapture(event.pointerId);
   drag.active = true;
   drag.moved = false;
@@ -486,6 +504,7 @@ canvas.addEventListener("pointerdown", (event) => {
 });
 
 canvas.addEventListener("pointermove", (event) => {
+  if (drive.active) return;
   if (drag.active) {
     const dx = event.clientX - drag.lastX;
     const dy = event.clientY - drag.lastY;
@@ -542,6 +561,7 @@ canvas.addEventListener("contextmenu", (event) => event.preventDefault());
 canvas.addEventListener(
   "wheel",
   (event) => {
+    if (drive.active) return; // no map zooming mid-drive
     event.preventDefault();
     // Normalise line-vs-pixel deltas, then clamp so trackpads don't teleport.
     const unit = event.deltaMode === 1 ? 16 : 1;
@@ -707,7 +727,72 @@ searchModalEl.addEventListener("click", (event) => {
 
 // ── Global keyboard ─────────────────────────────────────────────────────────
 
+// ── Drive controls ──────────────────────────────────────────────────────────
+// While driving, the keyboard belongs to the car: WASD/arrows drive, X
+// U-turns, V/Tab swaps the ride, Esc exits. Everything else is swallowed.
+
+const drivePickerEl = document.getElementById("drivePicker");
+
+document.getElementById("driveTrigger").addEventListener("click", () => drive.openPicker());
+document.getElementById("driveExit").addEventListener("click", () => {
+  const pos = drive.exit();
+  if (pos) landRigOn(pos);
+});
+document.getElementById("driveUturn").addEventListener("click", () => drive.uturn());
+
+// Window blur can strand a held key — clear the pedals.
+window.addEventListener("blur", () => {
+  drive.keys.throttle = drive.keys.brake = drive.keys.left = drive.keys.right = false;
+});
+
+/**
+ * Land the map camera over a world position (used when exiting drive mode).
+ * Starts tight and low on the player's own heading, then lets the rig's damping
+ * pull back to the map view — handing control over reads as a lift-off instead
+ * of a cut to an unrelated angle.
+ */
+function landRigOn(pos) {
+  rig.flight = null;
+  rig.target.set(pos.x, 0, pos.z);
+  rig.desired.target.copy(rig.target);
+  // The rig orbits to `target + (sin r, ·, cos r) · distance`; the chase camera
+  // sat *behind* the car, so the matching orbit angle is the heading plus π.
+  rig.rotation = rig.desired.rotation = pos.heading + Math.PI;
+  rig.distance = 12;
+  rig.height = 7;
+  rig.desired.distance = 40;
+  rig.desired.height = 32;
+}
+
 window.addEventListener("keydown", (event) => {
+  if (drive.active) {
+    const key = event.key;
+    if (key === "w" || key === "W" || key === "ArrowUp") {
+      drive.keys.throttle = true;
+      event.preventDefault();
+    } else if (key === "s" || key === "S" || key === "ArrowDown") {
+      drive.keys.brake = true;
+      event.preventDefault();
+    } else if (key === "a" || key === "A" || key === "ArrowLeft") {
+      drive.keys.left = true;
+      event.preventDefault();
+    } else if (key === "d" || key === "D" || key === "ArrowRight") {
+      drive.keys.right = true;
+      event.preventDefault();
+    } else if (key === "Escape") {
+      const pos = drive.exit();
+      if (pos) landRigOn(pos);
+    } else if (key === "x" || key === "X") {
+      drive.uturn();
+    } else if (key === "v" || key === "V" || key === "Tab") {
+      event.preventDefault();
+      const pos = drive.exit();
+      if (pos) landRigOn(pos);
+      drive.openPicker();
+    }
+    return;
+  }
+
   const typing =
     event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement;
 
@@ -717,9 +802,14 @@ window.addEventListener("keydown", (event) => {
     return;
   }
 
-  if (searchModalEl.open || typing) return;
+  // The ride picker is modal: the map shortcuts behind it must stay inert.
+  if (searchModalEl.open || drivePickerEl.open || typing) return;
 
   switch (event.key) {
+    case "d":
+    case "D":
+      drive.openPicker();
+      break;
     case "ArrowDown":
       event.preventDefault();
       stepArea(1);
@@ -747,6 +837,15 @@ window.addEventListener("keydown", (event) => {
     default:
       break;
   }
+});
+
+window.addEventListener("keyup", (event) => {
+  if (!drive.active) return;
+  const key = event.key;
+  if (key === "w" || key === "W" || key === "ArrowUp") drive.keys.throttle = false;
+  else if (key === "s" || key === "S" || key === "ArrowDown") drive.keys.brake = false;
+  else if (key === "a" || key === "A" || key === "ArrowLeft") drive.keys.left = false;
+  else if (key === "d" || key === "D" || key === "ArrowRight") drive.keys.right = false;
 });
 
 // ── Mini-map ────────────────────────────────────────────────────────────────
@@ -874,10 +973,16 @@ function frame() {
   const rawDt = clock.getDelta();
   const dt = Math.min(rawDt, 0.05);
 
-  rig.update(dt, rawDt);
+  if (drive.active) {
+    // The drive controller moves the camera itself (chase rig).
+    drive.update(dt);
+  } else {
+    rig.update(dt, rawDt);
+  }
   updatePins(pins, dt, camera);
-  traffic.update(dt, rig.distance);
-  labels.update(camera, stage.size, rig.distance);
+  const viewDistance = drive.active ? drive.distance : rig.distance;
+  traffic.update(dt, viewDistance);
+  labels.update(camera, stage.size, viewDistance);
   stage.render();
 
   requestAnimationFrame(frame);
@@ -940,7 +1045,7 @@ document.querySelector(".brand")?.addEventListener("click", (event) => {
 
 // Debug handle. Deliberate and documented in CONTRIBUTING: lets you inspect
 // camera state or pin placement from the console (`__atlas.rig.distance`, …).
-window.__atlas = { rig, state, stage, pins, traffic, labels };
+window.__atlas = { rig, state, stage, pins, traffic, labels, drive };
 
 // Fade the loader once the first real frame is on screen.
 requestAnimationFrame(() => {
