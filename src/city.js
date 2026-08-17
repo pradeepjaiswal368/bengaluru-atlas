@@ -13,9 +13,11 @@ import {
   BOARD,
   DISTRICTS,
   LAKES,
+  LANDMARK_SHAPE,
   LANDMARKS,
   METRO_LINES,
   PARKS,
+  ROAD_WIDTH,
   ROADS,
   centroidOf,
   metres,
@@ -23,8 +25,10 @@ import {
 } from "./geo.js";
 import {
   hashSeed,
+  landmarkAnchor,
   mulberry32,
   nearRoad,
+  onRoadSurface,
   pointInRing,
   ringArea,
   ringBounds,
@@ -336,9 +340,9 @@ function buildRoads() {
   group.name = "roads";
 
   const spec = {
-    ring: { width: metres(230), color: PALETTE.roadRing, y: Y.road + 0.02 },
-    arterial: { width: metres(150), color: PALETTE.roadArterial, y: Y.road + 0.01 },
-    street: { width: metres(85), color: PALETTE.roadStreet, y: Y.road },
+    ring: { width: ROAD_WIDTH.ring, color: PALETTE.roadRing, y: Y.road + 0.02 },
+    arterial: { width: ROAD_WIDTH.arterial, color: PALETTE.roadArterial, y: Y.road + 0.01 },
+    street: { width: ROAD_WIDTH.street, color: PALETTE.roadStreet, y: Y.road },
   };
 
   for (const road of ROADS) {
@@ -456,6 +460,12 @@ function buildBuildings() {
       const w = plotMin + rng() * plotRange;
       const d = plotMin + rng() * plotRange;
       const half = Math.max(w, d) / 2;
+
+      // The corridor test above only cleared this plot's centre. Now the plot
+      // has a size, keep the whole footprint off the asphalt — a wide building
+      // centred just outside a narrow street's corridor still stands in the
+      // road, which is exactly what drive mode drives into.
+      if (onRoadSurface(x, z, Math.hypot(w, d) / 2)) continue;
 
       // Reject candidates that would collide with an already-placed neighbour.
       const cx = Math.floor(x / CELL);
@@ -628,25 +638,15 @@ function buildLandmarks() {
   });
 
   for (const landmark of LANDMARKS) {
-    const p = project(landmark.lat, landmark.lng);
+    // Authored lat/lng, nudged clear of the asphalt. The label layer anchors to
+    // the same helper, so the name follows the silhouette.
+    const p = landmarkAnchor(landmark);
     const h = landmark.height;
-    let geometry;
-
-    switch (landmark.kind) {
-      case "tower":
-        geometry = new THREE.CylinderGeometry(1.05, 1.45, h, 8);
-        break;
-      case "civic":
-        geometry = new THREE.BoxGeometry(3.6, h, 2.4);
-        break;
-      case "campus":
-        geometry = new THREE.BoxGeometry(2.8, h, 2.8);
-        break;
-      case "transit":
-      default:
-        geometry = new THREE.CylinderGeometry(1.5, 1.5, h, 6);
-        break;
-    }
+    const shape = LANDMARK_SHAPE[landmark.kind] ?? LANDMARK_SHAPE.transit;
+    const geometry =
+      shape.form === "cylinder"
+        ? new THREE.CylinderGeometry(shape.top, shape.bottom, h, shape.sides)
+        : new THREE.BoxGeometry(shape.w, h, shape.d);
 
     const mesh = new THREE.Mesh(geometry, body);
     mesh.position.set(p.x, h / 2 + Y.building, p.z);

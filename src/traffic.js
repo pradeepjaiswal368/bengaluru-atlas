@@ -34,7 +34,7 @@ const TIER = {
 const MAX_VEHICLES = 280;
 
 /** Vehicles sit just above the highest road surface (roads span y 0.09–0.11). */
-const VEHICLE_Y = 0.12;
+export const VEHICLE_Y = 0.12;
 
 /**
  * Vehicle classes. `share` is the probability slice; sizes are [w, h, l] in
@@ -356,7 +356,7 @@ function makeDayMaterials() {
  * stream means every vehicle simply moves forward along its track, and the
  * keep-left offset lands on the correct side automatically.
  */
-function buildTracks() {
+export function buildTracks() {
   const tracks = [];
   for (const road of ROADS) {
     const tier = TIER[road.tier] ?? TIER.street;
@@ -380,7 +380,7 @@ function buildTracks() {
  * vehicle — vehicles move a fraction of a segment per frame, so the walk is
  * almost always zero or one step.
  */
-function sample(track, s, cursor) {
+export function sampleTrack(track, s, cursor) {
   const { pts, cum } = track;
   let i = cursor.i;
   while (i < cum.length - 2 && s > cum[i + 1]) i++;
@@ -398,6 +398,76 @@ function sample(track, s, cursor) {
     z: az + (bz - az) * t,
     tx: (bx - ax) / segLen,
     tz: (bz - az) / segLen,
+  };
+}
+
+/**
+ * A standalone drivable vehicle for drive mode: the same part list as the
+ * fleet, built as plain meshes so a single car can move freely under player
+ * control. Returns `{ group, kind, setTheme, dispose }`.
+ *
+ * Geometries are cloned and materials are built fresh, so `dispose()` on exit
+ * can't pull anything out from under the ambient fleet — the fleet's instanced
+ * meshes share the `PARTS` geometry objects, and disposing those would drop the
+ * whole city's traffic.
+ */
+export function buildDriveVehicle(kindId, theme = "dark") {
+  const kind = KINDS.find((k) => k.id === kindId) ?? KINDS[0];
+  const day = makeDayMaterials();
+  const night = makeNightMaterials();
+  // One livery roll for the whole vehicle, like a fleet vehicle's colorRoll.
+  // Parts that share a material (a car's two body panels) would otherwise each
+  // pick their own colour and fight over the one material's `color`.
+  const roll = Math.random();
+
+  const geometries = [];
+  const parts = [];
+  for (const part of PARTS[kind.id]) {
+    const geo = part.geo.clone();
+    geometries.push(geo);
+    const palette = kind[part.paletteKey ?? "day"] ?? kind.day;
+    const colour = new THREE.Color(palette[Math.floor(roll * palette.length)]);
+    const dayMat = day[part.mat] ?? day.body;
+    const nightMat = night[part.mat] ?? night.body;
+    // `at` holds one local position per copy of the part — four wheels, two
+    // lamps — so each entry becomes its own mesh, the same way the fleet gives
+    // each entry its own instance.
+    for (const [x, y, z] of part.at) {
+      const mesh = new THREE.Mesh(geo, dayMat);
+      mesh.position.set(x, y, z);
+      mesh.castShadow = part.shadow === true;
+      mesh.frustumCulled = false;
+      parts.push({ mesh, dayMat, nightMat, tinted: part.tinted === true, colour });
+    }
+  }
+
+  const group = new THREE.Group();
+  group.name = "drive-vehicle";
+  const scale = kind.scale ?? 1;
+  group.scale.set(scale, scale, scale);
+  for (const p of parts) group.add(p.mesh);
+
+  function setTheme(t) {
+    for (const p of parts) {
+      p.mesh.material = t === "light" ? p.dayMat : p.nightMat;
+      if (p.tinted) p.mesh.material.color.copy(p.colour);
+    }
+  }
+  setTheme(theme);
+
+  return {
+    group,
+    kind: kind.id,
+    setTheme,
+    dispose() {
+      for (const geo of geometries) geo.dispose();
+      // Materials are shared between parts, so dedupe before disposing; the
+      // livery and checker canvases are built per call and go with them.
+      for (const mat of new Set([...Object.values(day), ...Object.values(night)])) {
+        mat.map?.dispose();
+        mat.dispose();
+      }
+    },
   };
 }
 
@@ -559,7 +629,7 @@ export function createTraffic() {
     for (const vehicle of vehicles) {
       const track = tracks[vehicle.track];
       vehicle.s = (vehicle.s + vehicle.speed * dt) % track.total;
-      const p = sample(track, vehicle.s, vehicle.cursor);
+      const p = sampleTrack(track, vehicle.s, vehicle.cursor);
 
       // Keep-left: left of heading in XZ is (tz, −tx). Scooters weave a little.
       const kind = KINDS[vehicle.kind];
