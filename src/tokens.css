@@ -1,0 +1,162 @@
+/**
+ * Bengaluru AI Atlas — design tokens.
+ *
+ * Two themes, switched by `data-theme` on <html> (set before first paint by the
+ * bootstrap script in index.html, toggleable from the HUD). The 3D scene swaps
+ * its own palette in lockstep — see PALETTES in city.js and SCENE_THEMES in
+ * scene.js — because a light HUD floating over a dark board (or vice versa)
+ * reads as a bug, not a preference.
+ *
+ * The interface wears a GTA-style treatment: condensed bold display type,
+ * near-black panels, and the signature game-yellow accent — the same hue the
+ * HQ pins are drawn in (PIN_KINDS in data.js), deepened on light so it holds
+ * contrast against white panels.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* ── Ink ─────────────────────────────────────────────────────────────── */
+  --ink: #f5f6f8;
+  --ink-soft: #c9ced6;
+  --ink-mute: #9299a6;
+  --ink-faint: #636b7a;
+
+  /* ── Surfaces ────────────────────────────────────────────────────────── */
+  --bg: #04060a;
+  --panel: rgba(7, 9, 13, 0.86);
+  --panel-raised: rgba(10, 12, 17, 0.95);
+  --panel-solid: #0b0d11;
+  --hairline: rgba(255, 255, 255, 0.14);
+  --hairline-strong: rgba(255, 255, 255, 0.3);
+  --wash: rgba(255, 255, 255, 0.07);
+
+  /* ── Accents ─────────────────────────────────────────────────────────── */
+  --accent: #f5c518;
+  --accent-dim: #d9ab00;
+  --accent-wash: rgba(245, 197, 24, 0.15);
+  --accent-line: rgba(245, 197, 24, 0.5);
+  --accent-ink: #14100a;
+
+  --teal: #4d9fff;
+  --teal-wash: rgba(77, 159, 255, 0.13);
+
+  /* Pin/legend dot colours — mirrored per theme so the dots that identify
+     companies stay legible on both boards (see PIN_KINDS in data.js). */
+  --pin-hq: #ffd11a;
+  --pin-satellite: #4d9fff;
+
+  /* ── Overlay surfaces (map labels, modal backdrop, mini-map) ─────────── */
+  --label-chip: rgba(6, 8, 12, 0.92);
+  --label-place: rgba(126, 194, 198, 0.9);
+  --backdrop: rgba(2, 4, 8, 0.7);
+  --map-land: rgba(0, 0, 0, 0.55);
+  --map-water: rgba(28, 118, 148, 0.6);
+
+  /* Mirrors METRO_LINES in geo.js so the mini-map matches the 3D board. */
+  --metro-purple: #a07ce8;
+  --metro-green: #4fb98a;
+  --metro-yellow: #e3b23c;
+
+  /* ── Type ────────────────────────────────────────────────────────────── */
+  /* Condensed bold first — the GTA display voice. Falls back through Arial
+     Narrow to Impact so every platform gets a heavy, squat sans. */
+  --font: "Helvetica Neue Condensed", "Helvetica Neue", "Arial Narrow", Impact,
+    "Arial Black", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Arial, sans-serif;
+  --font-gta: "Helvetica Neue Condensed", "Helvetica Neue", "Arial Narrow",
+    Impact, "Arial Black", Arial, sans-serif;
+  /* Small technical text (numbers, legends, prompts) is condensed sans too —
+     nothing monospace survives the GTA pass. */
+  --mono: "Helvetica Neue Condensed", "Helvetica Neue", "Arial Narrow", Impact,
+    Arial, sans-serif;
+
+  /* ── Radii ───────────────────────────────────────────────────────────── */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 9px;
+  --r-lg: 12px;
+  --r-pill: 999px;
+
+  /* ── Metrics ─────────────────────────────────────────────────────────── */
+  --rail-w: 348px;
+  --hud-pad: 24px;
+  --blur: 20px;
+
+  /* ── Elevation ───────────────────────────────────────────────────────── */
+  --shadow-panel: 0 18px 44px -18px rgba(0, 0, 0, 0.95), 0 3px 10px -4px rgba(0, 0, 0, 0.9);
+  --shadow-pop: 0 40px 90px -28px rgba(0, 0, 0, 0.98);
+  --glow-accent: 0 0 0 1px var(--accent-line), 0 6px 20px -10px rgba(245, 197, 24, 0.5);
+
+  /* ── Glass chrome (NYC-atlas treatment) ───────────────────────────────
+     One frosted treatment shared by every panel: a hairline light border,
+     an inset top highlight so the glass reads, and a cinematic vignette
+     that dims the board behind a focused company card. */
+  --glass-border: rgba(255, 255, 255, 0.16);
+  --glass-highlight: rgba(255, 255, 255, 0.09);
+  --glass-soft: rgba(255, 255, 255, 0.12);
+  --vignette: rgba(3, 5, 12, 0.55);
+
+  /* ── Motion ──────────────────────────────────────────────────────────── */
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --t-fast: 130ms;
+  --t-med: 250ms;
+  --t-slow: 520ms;
+}
+
+/* ── Light theme ──────────────────────────────────────────────────────────
+   Paper-map daytime. Structural tokens (type, radii, metrics, motion) are
+   shared; only ink, surfaces and accents change. The gold goes deeper so it
+   keeps its punch on cream. */
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --ink: #1a2130;
+  --ink-soft: #3f4a60;
+  --ink-mute: #5a6478;
+  --ink-faint: #7e8798;
+
+  --bg: #e8e5dc;
+  --panel: rgba(250, 249, 245, 0.9);
+  --panel-raised: rgba(255, 255, 255, 0.96);
+  --panel-solid: #fbfaf6;
+  --hairline: rgba(24, 34, 54, 0.12);
+  --hairline-strong: rgba(24, 34, 54, 0.24);
+  --wash: rgba(24, 34, 54, 0.06);
+
+  --accent: #c8960c;
+  --accent-dim: #a37d08;
+  --accent-wash: rgba(200, 150, 12, 0.14);
+  --accent-line: rgba(200, 150, 12, 0.5);
+  --accent-ink: #fff8e8;
+
+  --teal: #0e7fd4;
+  --teal-wash: rgba(14, 127, 212, 0.12);
+
+  --pin-hq: #c8960c;
+  --pin-satellite: #0e7fd4;
+
+  --label-chip: rgba(255, 255, 255, 0.95);
+  --label-place: rgba(20, 104, 120, 0.9);
+  --backdrop: rgba(56, 66, 86, 0.42);
+  --map-land: rgba(24, 34, 54, 0.08);
+  --map-water: rgba(30, 120, 140, 0.5);
+
+  --shadow-panel: 0 18px 44px -22px rgba(40, 52, 72, 0.4), 0 2px 10px -5px rgba(40, 52, 72, 0.2);
+  --shadow-pop: 0 32px 72px -28px rgba(40, 52, 72, 0.46);
+  --glow-accent: 0 0 0 1px var(--accent-line), 0 6px 20px -10px rgba(200, 150, 12, 0.4);
+
+  --glass-border: rgba(255, 255, 255, 0.7);
+  --glass-highlight: rgba(255, 255, 255, 0.9);
+  --glass-soft: rgba(255, 255, 255, 0.75);
+  --vignette: rgba(70, 84, 112, 0.32);
+}
+
+@media (max-width: 900px) {
+  :root {
+    --rail-w: 100%;
+    --hud-pad: 12px;
+  }
+}

@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <script>
+      // Resolve the theme before first paint so there's no flash of the wrong
+      // one: a stored override wins, otherwise follow the OS preference.
+      (function () {
+        var theme = "dark";
+        try {
+          var stored = localStorage.getItem("atlas-theme");
+          if (stored === "light" || stored === "dark") theme = stored;
+          else if (matchMedia("(prefers-color-scheme: light)").matches) theme = "light";
+        } catch (error) {
+          /* storage blocked — dark default stands */
+        }
+        document.documentElement.dataset.theme = theme;
+      })();
+    </script>
+    <meta
+      name="description"
+      content="A high-fidelity 3D interactive map of Bengaluru's AI startups, cluster by cluster."
+    />
+    <title>Bengaluru AI Atlas</title>
+
+    <!-- Open Graph / social cards -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Bengaluru AI Atlas" />
+    <meta property="og:title" content="Bengaluru AI Atlas: A 3D map of Bengaluru's AI startups" />
+    <meta
+      property="og:description"
+      content="An interactive 3D map of the AI companies building in Bengaluru, explored cluster by cluster from Koramangala to Whitefield."
+    />
+    <meta property="og:image" content="./og.svg" />
+    <meta property="og:image:alt" content="3D map of Bengaluru showing AI startups across eight clusters" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Bengaluru AI Atlas: A 3D map of Bengaluru's AI startups" />
+    <meta
+      name="twitter:description"
+      content="An interactive 3D map of the AI companies building in Bengaluru, cluster by cluster."
+    />
+    <meta name="twitter:image" content="./og.svg" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+  </head>
+  <body>
+    <div id="app" class="atlas-shell">
+      <canvas id="scene" aria-label="3D interactive map of Bengaluru AI startups"></canvas>
+      <div id="labelsLayer" class="labels-layer" aria-hidden="false"></div>
+
+      <div class="hud-left">
+        <aside class="rail" aria-label="Bengaluru AI Atlas navigation">
+          <a class="brand" href="#" aria-label="Bengaluru AI Atlas home">
+            <svg class="brand__mark" viewBox="0 0 32 32" aria-hidden="true">
+              <!-- Map pin over a ring: the Outer Ring Road is the city's
+                   defining outline, so the mark nests one inside the other. -->
+              <path
+                fill="currentColor"
+                fill-rule="evenodd"
+                d="M16 29.5 C12.2 23.5 7.5 17.5 7.5 12 A8.5 8.5 0 1 1 24.5 12 C24.5 17.5 19.8 23.5 16 29.5 Z M16 8.8 A3.2 3.2 0 1 0 16 15.2 A3.2 3.2 0 1 0 16 8.8 Z"
+              />
+            </svg>
+            <span class="brand__text">
+              <h1><span class="brand__city">Bengaluru</span> <span class="brand__atlas">AI&nbsp;Atlas</span></h1>
+              <span class="brand__sub" id="brandSub">58 startups · 8 clusters</span>
+            </span>
+          </a>
+
+          <nav id="areaList" class="area-list" aria-label="Explore by cluster"></nav>
+
+          <div class="rail__foot">
+            <div id="pinLegend" class="pin-legend"></div>
+            <a
+              class="rail__cta"
+              id="contributeLink"
+              href="#"
+              target="_blank"
+              rel="noreferrer noopener"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .5C5.37.5 0 5.78 0 12.29c0 5.2 3.44 9.6 8.21 11.16.6.11.82-.25.82-.56 0-.28-.01-1.02-.02-2-3.34.7-4.04-1.58-4.04-1.58-.55-1.36-1.33-1.73-1.33-1.73-1.09-.73.08-.71.08-.71 1.2.08 1.83 1.21 1.83 1.21 1.07 1.8 2.81 1.28 3.5.98.11-.76.42-1.28.76-1.57-2.67-.3-5.47-1.3-5.47-5.79 0-1.28.47-2.33 1.23-3.15-.12-.29-.53-1.49.12-3.11 0 0 1-.31 3.3 1.2.96-.26 1.98-.39 3-.4 1.02.01 2.04.14 3 .4 2.28-1.51 3.29-1.2 3.29-1.2.65 1.62.24 2.82.12 3.11.77.82 1.23 1.87 1.23 3.15 0 4.5-2.81 5.48-5.49 5.77.43.36.81 1.09.81 2.2 0 1.59-.01 2.87-.01 3.26 0 .31.21.68.83.56C20.57 21.88 24 17.48 24 12.29 24 5.78 18.63.5 12 .5Z"/></svg>
+              <span>Add your startup</span>
+              <span class="rail__cta-arrow" aria-hidden="true">↗</span>
+            </a>
+            <p class="rail__hint">
+              <kbd>↑</kbd><kbd>↓</kbd> clusters · <kbd>⌘K</kbd> search · drag orbit · shift-drag pan
+            </p>
+            <p class="rail__credit" id="railCredit"></p>
+          </div>
+        </aside>
+
+        <section id="detailCard" class="detail-card is-hidden" aria-live="polite"></section>
+      </div>
+
+      <div id="areaBanner" class="area-banner" aria-hidden="true"></div>
+
+      <div class="hud-top-right">
+        <button
+          id="searchTrigger"
+          class="search-trigger"
+          type="button"
+          aria-haspopup="dialog"
+          aria-label="Search companies"
+        >
+          <svg class="search-trigger__icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><line x1="16.5" y1="16.5" x2="21" y2="21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <span class="search-trigger__label">Search</span>
+          <kbd>⌘K</kbd>
+        </button>
+        <button id="themeToggle" class="icon-btn" type="button" aria-label="Switch to light theme">
+          <svg class="theme-icon theme-icon--sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.4" fill="none" stroke="currentColor" stroke-width="2"/><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="2.4" x2="12" y2="4.8"/><line x1="12" y1="19.2" x2="12" y2="21.6"/><line x1="2.4" y1="12" x2="4.8" y2="12"/><line x1="19.2" y1="12" x2="21.6" y2="12"/><line x1="5.2" y1="5.2" x2="6.9" y2="6.9"/><line x1="17.1" y1="17.1" x2="18.8" y2="18.8"/><line x1="5.2" y1="18.8" x2="6.9" y2="17.1"/><line x1="17.1" y1="6.9" x2="18.8" y2="5.2"/></g></svg>
+          <svg class="theme-icon theme-icon--moon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20.4 14.9A8.6 8.6 0 0 1 9.1 3.6a1 1 0 0 0-1.3-1.3A10.2 10.2 0 1 0 21.7 16.2a1 1 0 0 0-1.3-1.3Z"/></svg>
+        </button>
+        <a
+          class="icon-btn"
+          id="repoLink"
+          href="#"
+          target="_blank"
+          rel="noreferrer noopener"
+          aria-label="View source on GitHub"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .5C5.37.5 0 5.78 0 12.29c0 5.2 3.44 9.6 8.21 11.16.6.11.82-.25.82-.56 0-.28-.01-1.02-.02-2-3.34.7-4.04-1.58-4.04-1.58-.55-1.36-1.33-1.73-1.33-1.73-1.09-.73.08-.71.08-.71 1.2.08 1.83 1.21 1.83 1.21 1.07 1.8 2.81 1.28 3.5.98.11-.76.42-1.28.76-1.57-2.67-.3-5.47-1.3-5.47-5.79 0-1.28.47-2.33 1.23-3.15-.12-.29-.53-1.49.12-3.11 0 0 1-.31 3.3 1.2.96-.26 1.98-.39 3-.4 1.02.01 2.04.14 3 .4 2.28-1.51 3.29-1.2 3.29-1.2.65 1.62.24 2.82.12 3.11.77.82 1.23 1.87 1.23 3.15 0 4.5-2.81 5.48-5.49 5.77.43.36.81 1.09.81 2.2 0 1.59-.01 2.87-.01 3.26 0 .31.21.68.83.56C20.57 21.88 24 17.48 24 12.29 24 5.78 18.63.5 12 .5Z"/></svg>
+        </a>
+      </div>
+
+      <aside class="mini-map" aria-label="Mini map">
+        <svg
+          id="miniMapSvg"
+          viewBox="0 0 132 132"
+          role="img"
+          aria-label="Simplified Bengaluru ring road with the active cluster highlighted"
+        >
+          <g id="miniMapWater"></g>
+          <path id="miniMapRing" class="mini-map__ring" />
+          <g id="miniMapMetro"></g>
+          <g id="miniMapPoints"></g>
+          <circle id="miniMapFocus" class="mini-map__focus" r="0" />
+        </svg>
+        <p>Bengaluru</p>
+      </aside>
+
+      <div id="loader" class="loader">
+        <div class="loader__mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32">
+            <path
+              fill="currentColor"
+              fill-rule="evenodd"
+              d="M16 29.5 C12.2 23.5 7.5 17.5 7.5 12 A8.5 8.5 0 1 1 24.5 12 C24.5 17.5 19.8 23.5 16 29.5 Z M16 8.8 A3.2 3.2 0 1 0 16 15.2 A3.2 3.2 0 1 0 16 8.8 Z"
+            />
+          </svg>
+        </div>
+        <div class="loader__title"><span>Bengaluru</span> <span class="loader__title-accent">AI&nbsp;Atlas</span></div>
+        <div class="loader__bar" aria-hidden="true"><i></i></div>
+        <p class="loader__sub">Loading the plateau…</p>
+      </div>
+    </div>
+
+    <dialog id="searchModal" class="search-modal" aria-label="Search AI startups">
+      <div class="search-modal__bar">
+        <svg class="search-modal__icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><line x1="16.5" y1="16.5" x2="21" y2="21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <input
+          id="companySearch"
+          type="search"
+          autocomplete="off"
+          placeholder="Search 58 AI companies by name, sector, or cluster…"
+          aria-label="Search companies"
+        />
+        <kbd class="search-modal__esc">esc</kbd>
+      </div>
+      <div id="searchResults" class="search-results" role="listbox"></div>
+    </dialog>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

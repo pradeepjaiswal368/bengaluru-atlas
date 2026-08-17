@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#070910" />
+      <stop offset="0.6" stop-color="#0c1119" />
+      <stop offset="1" stop-color="#151c27" />
+    </linearGradient>
+    <radialGradient id="glow" cx="0.72" cy="0.62" r="0.5">
+      <stop offset="0" stop-color="#ff9a3c" stop-opacity="0.22" />
+      <stop offset="1" stop-color="#ff9a3c" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#sky)" />
+  <rect width="1200" height="630" fill="url(#glow)" />
+
+  <!-- Stylized Outer Ring Road, the city's defining outline -->
+  <g transform="translate(720 315) scale(1.5)">
+    <path
+      d="M0 -120 L58 -96 L96 -40 L104 26 L74 88 L14 122 L-52 108 L-96 58 L-108 -12 L-74 -78 Z"
+      fill="rgba(255,255,255,0.03)"
+      stroke="rgba(255,255,255,0.16)"
+      stroke-width="1.6"
+    />
+    <path d="M-104 -18 L104 22" stroke="#a07ce8" stroke-opacity="0.45" stroke-width="1.6" fill="none" />
+    <path d="M-16 -122 L10 122" stroke="#4fb98a" stroke-opacity="0.45" stroke-width="1.6" fill="none" />
+    <path d="M-70 44 L46 106" stroke="#e3b23c" stroke-opacity="0.45" stroke-width="1.6" fill="none" />
+
+    <g fill="#2b8b92" fill-opacity="0.55">
+      <circle cx="34" cy="30" r="9" />
+      <circle cx="72" cy="18" r="5" />
+      <circle cx="-6" cy="-58" r="4.5" />
+      <circle cx="-44" cy="-84" r="4" />
+    </g>
+
+    <g fill="#ff9a3c">
+      <circle cx="-14" cy="26" r="3.4" /><circle cx="-4" cy="38" r="3.4" />
+      <circle cx="8" cy="52" r="3.4" /><circle cx="18" cy="34" r="3.4" />
+      <circle cx="-26" cy="12" r="3.4" /><circle cx="2" cy="8" r="3.4" />
+      <circle cx="26" cy="-6" r="3.4" /><circle cx="44" cy="8" r="3.4" />
+      <circle cx="62" cy="-24" r="3.4" /><circle cx="80" cy="-10" r="3.4" />
+      <circle cx="-34" cy="-24" r="3.4" /><circle cx="-52" cy="-6" r="3.4" />
+      <circle cx="-18" cy="-46" r="3.4" /><circle cx="6" cy="-70" r="3.4" />
+      <circle cx="-40" cy="66" r="3.4" /><circle cx="-8" cy="94" r="3.4" />
+    </g>
+    <g fill="#43d6c4">
+      <circle cx="54" cy="-46" r="3.4" /><circle cx="86" cy="34" r="3.4" />
+      <circle cx="-62" cy="30" r="3.4" /><circle cx="34" cy="-88" r="3.4" />
+    </g>
+  </g>
+
+  <!-- Wordmark -->
+  <g transform="translate(84 214)">
+    <path
+      fill="#ff9a3c"
+      fill-rule="evenodd"
+      d="M22 60 C14.6 48.4 6 37 6 26.4 A16 16 0 1 1 38 26.4 C38 37 29.4 48.4 22 60 Z M22 20 A6 6 0 1 0 22 32 A6 6 0 1 0 22 20 Z"
+    />
+    <text
+      x="60" y="42"
+      font-family="Geist, Inter, -apple-system, Helvetica, Arial, sans-serif"
+      font-size="34" font-weight="600" letter-spacing="0.14em"
+      fill="#7c8697"
+    >BENGALURU</text>
+  </g>
+
+  <text
+    x="84" y="348"
+    font-family="Geist, Inter, -apple-system, Helvetica, Arial, sans-serif"
+    font-size="82" font-weight="640" letter-spacing="-0.03em"
+    fill="#f3f6fa"
+  >AI Atlas</text>
+
+  <text
+    x="84" y="404"
+    font-family="Geist, Inter, -apple-system, Helvetica, Arial, sans-serif"
+    font-size="25" font-weight="400"
+    fill="#b7c1cf"
+  >A 3D map of the AI companies building here —</text>
+  <text
+    x="84" y="440"
+    font-family="Geist, Inter, -apple-system, Helvetica, Arial, sans-serif"
+    font-size="25" font-weight="400"
+    fill="#b7c1cf"
+  >cluster by cluster, Koramangala to Whitefield.</text>
+
+  <g transform="translate(84 500)">
+    <rect width="196" height="38" rx="19" fill="rgba(255,154,60,0.14)" stroke="rgba(255,154,60,0.4)" />
+    <text
+      x="22" y="25"
+      font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+      font-size="14" letter-spacing="0.05em"
+      fill="#ff9a3c"
+    >58 startups · 8 clusters</text>
+  </g>
+</svg>

@@ -1,0 +1,1377 @@
+/**
+ * Bengaluru AI Atlas — interface.
+ *
+ * Everything here floats over a full-bleed WebGL canvas. The rule that keeps it
+ * usable: HUD containers are pointer-transparent, and only the actual controls
+ * inside them take pointer events, so the map stays draggable everywhere the
+ * interface isn't.
+ */
+
+/* ── Reset ──────────────────────────────────────────────────────────────── */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+}
+
+body {
+  font-family: var(--font);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+h1,
+h2,
+p,
+dl,
+dd,
+dt {
+  margin: 0;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r-xs);
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+kbd {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 5px;
+  border: 1px solid var(--hairline-strong);
+  background: var(--glass-soft);
+  color: var(--ink-soft);
+}
+
+/* ── Shell ──────────────────────────────────────────────────────────────── */
+
+.atlas-shell {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+
+#scene {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  cursor: grab;
+}
+
+#scene.is-grabbing {
+  cursor: grabbing;
+}
+
+#scene.is-pointing {
+  cursor: pointer;
+}
+
+/* Cinematic vignette (NYC-atlas signature): the board dims behind a focused
+   company card so the detail panel owns the frame. */
+.atlas-shell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse 72% 68% at 50% 46%,
+    transparent 58%,
+    var(--vignette) 100%
+  );
+  opacity: 0;
+  transition: opacity var(--t-slow) var(--ease);
+}
+
+body.is-focused .atlas-shell::after {
+  opacity: 1;
+}
+
+/* ── Map labels ─────────────────────────────────────────────────────────── */
+
+.labels-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  overflow: hidden;
+  contain: strict;
+}
+
+.map-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  /* `translate` composes before `transform`, so JS owns the screen position
+     while CSS owns the anchoring offset — bottom-centre over the pin. */
+  translate: -50% -100%;
+  margin-top: -10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity var(--t-med) var(--ease);
+  will-change: transform, opacity;
+}
+
+.map-label.is-visible {
+  opacity: 1;
+}
+
+/* No backdrop-filter here on purpose: forty blurred chips moving over a WebGL
+   canvas re-sample the scene every frame and visibly drag the frame rate. A
+   more opaque flat chip reads better anyway. */
+.map-label__name {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  padding: 4px 9px;
+  border-radius: var(--r-xs);
+  background: var(--label-chip);
+  border: 1px solid var(--hairline-strong);
+  box-shadow: 0 2px 10px -4px rgba(0, 0, 0, 0.6);
+}
+
+.map-label__sub {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  text-shadow: 0 1px 4px var(--bg), 0 0 8px var(--bg);
+}
+
+.map-label--landmark .map-label__name,
+.map-label--place .map-label__name {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  background: none;
+  border-color: transparent;
+  box-shadow: none;
+  padding: 0;
+  /* Naked text over 3D massing needs a scrim or it dissolves into the roofs. */
+  text-shadow: 0 1px 3px var(--bg), 0 0 10px var(--bg), 0 0 18px var(--bg);
+}
+
+.map-label--place .map-label__name {
+  color: var(--label-place);
+  font-style: italic;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  font-size: 11px;
+}
+
+/* Far zoom (whole plateau): names only. The sector line doubles the text on
+   screen exactly when there's least room for it. */
+.labels-layer.is-far .map-label__sub {
+  display: none;
+}
+
+.labels-layer.is-far .map-label--company .map-label__name {
+  font-size: 13px;
+  padding: 3px 8px;
+}
+
+.map-label.is-emphasis {
+  z-index: 3;
+}
+
+.map-label.is-emphasis .map-label__name {
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 6px 20px -8px rgba(245, 197, 24, 0.7);
+}
+
+.map-label.is-emphasis .map-label__sub {
+  color: var(--accent);
+}
+
+/* ── HUD scaffolding ────────────────────────────────────────────────────── */
+
+.hud-left,
+.hud-top-right,
+.mini-map {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.hud-left > *,
+.hud-top-right > *,
+.mini-map {
+  pointer-events: auto;
+}
+
+.hud-left {
+  top: var(--hud-pad);
+  left: var(--hud-pad);
+  bottom: var(--hud-pad);
+  width: var(--rail-w);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-height: calc(100% - var(--hud-pad) * 2);
+}
+
+.hud-top-right {
+  top: var(--hud-pad);
+  right: var(--hud-pad);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Staggered entrance animations so the HUD assembles on load — rail first,
+   controls next, radar last (NYC-atlas signature). */
+.rail {
+  animation: hud-in-left var(--t-slow) var(--ease-out) backwards;
+}
+
+.hud-top-right {
+  animation: hud-in-up var(--t-slow) var(--ease-out) 80ms backwards;
+}
+
+.mini-map {
+  animation: hud-in-up var(--t-slow) var(--ease-out) 160ms backwards;
+}
+
+@keyframes hud-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+}
+
+@keyframes hud-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* ── Rail ───────────────────────────────────────────────────────────────── */
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 22px 20px 18px;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--hairline);
+  border-top: 3px solid var(--accent);
+  background: var(--panel);
+  backdrop-filter: blur(var(--blur)) saturate(1.4);
+  box-shadow: var(--shadow-panel);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 4px 18px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.brand__mark {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  color: var(--accent);
+  filter: drop-shadow(0 2px 10px rgba(245, 197, 24, 0.45));
+}
+
+.brand__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.brand__text h1 {
+  font-family: var(--font-gta);
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1.1;
+  color: var(--ink);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+}
+
+.brand__atlas {
+  color: var(--accent);
+}
+
+.brand__sub {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+
+/* ── Cluster list ───────────────────────────────────────────────────────── */
+
+.area-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 0;
+  margin: 0 -6px;
+  overflow-y: auto;
+  min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--hairline-strong) transparent;
+}
+
+.area-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.area-list::-webkit-scrollbar-thumb {
+  background: var(--hairline-strong);
+  border-radius: var(--r-pill);
+}
+
+.area {
+  display: grid;
+  grid-template-columns: 28px 1fr 16px;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 12px;
+  border-radius: var(--r-sm);
+  text-align: left;
+  transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease),
+    transform var(--t-fast) var(--ease);
+}
+
+.area:hover {
+  background: var(--wash);
+}
+
+.area__number {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+  transition: color var(--t-fast) var(--ease);
+}
+
+.area__body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.area__label {
+  font-family: var(--font-gta);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color var(--t-fast) var(--ease);
+}
+
+.area__count {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.area__chev {
+  font-size: 12px;
+  color: var(--ink-faint);
+  opacity: 0;
+  transform: translateX(-3px);
+  transition: opacity var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
+}
+
+.area:hover .area__chev {
+  opacity: 0.7;
+  transform: none;
+}
+
+/* Refined NYC-atlas active row: soft accent wash + accent index bar, instead
+   of a solid block — the GTA voice stays in the banner, radar and buttons. */
+.area.is-active {
+  background: var(--accent-wash);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.area.is-active .area__label {
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.area.is-active .area__number,
+.area.is-active .area__chev {
+  color: var(--accent);
+  opacity: 1;
+  transform: none;
+}
+
+.area.is-active .area__count {
+  color: var(--accent-dim);
+}
+
+.area:active {
+  transform: translateY(1px);
+}
+
+/* ── Rail footer ────────────────────────────────────────────────────────── */
+
+.rail__foot {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 16px;
+  border-top: 1px solid var(--hairline);
+}
+
+.pin-legend {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 0 4px;
+}
+
+.pin-legend__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+
+.pin-legend__row i {
+  width: 9px;
+  height: 9px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--dot);
+  box-shadow: 0 0 8px -1px var(--dot);
+}
+
+/* Namma Metro key — the lines are drawn in these colours on the board. */
+.pin-legend__metro {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+  padding-top: 9px;
+  border-top: 1px dashed var(--hairline);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.pin-legend__metro i {
+  display: inline-block;
+  width: 16px;
+  height: 4px;
+  margin-right: 6px;
+  border-radius: var(--r-pill);
+  background: var(--line);
+  vertical-align: middle;
+  box-shadow: 0 0 7px -1px var(--line);
+}
+
+.rail__cta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  font-family: var(--font-gta);
+  font-size: 13.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+  transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease),
+    color var(--t-fast) var(--ease);
+}
+
+.rail__cta svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  opacity: 1;
+}
+
+.rail__cta-arrow {
+  margin-left: auto;
+  font-size: 11px;
+  color: inherit;
+  opacity: 0.8;
+}
+
+.rail__cta:hover {
+  color: #000;
+  border-color: var(--accent-dim);
+  background: var(--accent-dim);
+}
+
+.rail__cta:hover .rail__cta-arrow {
+  color: inherit;
+}
+
+.rail__cta:active {
+  transform: scale(0.98);
+}
+
+.rail__hint {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 4px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1.8;
+  color: var(--ink-faint);
+}
+
+.rail__credit {
+  padding: 0 4px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  line-height: 1.6;
+  color: var(--ink-faint);
+}
+
+.rail__credit a {
+  color: var(--ink-mute);
+  border-bottom: 1px solid var(--hairline-strong);
+}
+
+.rail__credit a:hover {
+  color: var(--accent);
+  border-color: var(--accent-line);
+}
+
+/* ── Detail card ────────────────────────────────────────────────────────── */
+
+.detail-card {
+  position: relative;
+  flex: none;
+  padding: 20px 22px 22px;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--hairline);
+  border-top: 3px solid var(--accent);
+  background: var(--panel-raised);
+  backdrop-filter: blur(var(--blur)) saturate(1.4);
+  box-shadow: var(--shadow-panel);
+  animation: card-in var(--t-med) var(--ease-out) both;
+}
+
+.detail-card.is-hidden {
+  display: none;
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+}
+
+.detail__eyebrow {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 7px;
+}
+
+/* A company card takes its sector's hue — the one place the interface gets to
+   say something colour the map can't (the map's colour means office type). */
+.detail-card.has-accent {
+  border-top-color: var(--card-accent);
+  box-shadow: var(--shadow-panel), inset 0 1px 0 var(--glass-highlight),
+    0 0 24px -10px var(--card-accent);
+}
+
+.detail__eyebrow--sector {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--card-accent);
+}
+
+.detail__eyebrow--sector::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--card-accent);
+  box-shadow: 0 0 8px -1px var(--card-accent);
+}
+
+.detail__title {
+  font-family: var(--font-gta);
+  font-size: 23px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.12;
+  padding-right: 24px;
+}
+
+.detail__body {
+  margin-top: 10px;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--ink-soft);
+}
+
+.detail__stats,
+.detail__meta {
+  display: grid;
+  gap: 2px 12px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--hairline);
+}
+
+.detail__stats {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.detail__meta {
+  grid-template-columns: repeat(2, 1fr);
+  gap: 9px 10px;
+}
+
+.detail__stats dt,
+.detail__meta dt {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 3px;
+}
+
+.detail__stats dd,
+.detail__meta dd {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.detail__stats dd {
+  font-family: var(--mono);
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--accent);
+}
+
+.detail__meta dd {
+  font-size: 14.5px;
+}
+
+.detail__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-sm);
+  background: transparent;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+  transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease),
+    transform var(--t-fast) var(--ease);
+}
+
+.detail__link:hover {
+  background: var(--accent);
+  color: var(--accent-ink);
+  transform: translateY(-1px);
+}
+
+.detail__link:active {
+  transform: translateY(1px);
+}
+
+.detail__close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-xs);
+  font-size: 20px;
+  line-height: 1;
+  color: var(--ink-faint);
+  transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+}
+
+.detail__close:hover {
+  background: var(--wash);
+  color: var(--ink);
+}
+
+.detail__close:active {
+  transform: scale(0.94);
+}
+
+/* ── Top-right controls ─────────────────────────────────────────────────── */
+
+.search-trigger,
+.icon-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 42px;
+  padding: 0 14px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--hairline-strong);
+  background: var(--panel-raised);
+  backdrop-filter: blur(var(--blur));
+  box-shadow: var(--shadow-panel);
+  color: var(--ink-soft);
+  transition: border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease),
+    background var(--t-fast) var(--ease);
+}
+
+.search-trigger:hover,
+.icon-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent-line);
+  background: var(--panel-raised);
+}
+
+.search-trigger:active,
+.icon-btn:active {
+  transform: translateY(1px);
+}
+
+.search-trigger__icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  opacity: 0.7;
+}
+
+.search-trigger__label {
+  font-family: var(--font-gta);
+  font-size: 13.5px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.icon-btn {
+  width: 42px;
+  padding: 0;
+  justify-content: center;
+}
+
+.icon-btn svg {
+  width: 17px;
+  height: 17px;
+}
+
+/* Theme toggle shows the theme you'd switch TO: sun while dark, moon while light. */
+:root[data-theme="dark"] .theme-icon--moon,
+:root[data-theme="light"] .theme-icon--sun {
+  display: none;
+}
+
+/* ── Mini-map ───────────────────────────────────────────────────────────── */
+
+.mini-map {
+  right: var(--hud-pad);
+  bottom: var(--hud-pad);
+  width: 184px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  background: rgba(4, 6, 10, 0.88);
+  backdrop-filter: blur(var(--blur));
+  box-shadow: var(--shadow-panel), inset 0 1px 0 var(--glass-highlight),
+    0 0 0 5px rgba(4, 6, 10, 0.55), 0 0 26px -6px rgba(245, 197, 24, 0.35);
+  overflow: hidden;
+}
+
+.mini-map svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.mini-map p {
+  position: absolute;
+  bottom: 8px;
+  left: 0;
+  right: 0;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--accent);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+}
+
+.mini-map__ring {
+  fill: var(--map-land);
+  stroke: var(--accent);
+  stroke-width: 1.6;
+}
+
+.mini-map__water {
+  fill: var(--map-water);
+}
+
+.mini-map__metro {
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  opacity: 0.85;
+}
+
+.mini-map__point {
+  fill: var(--accent);
+  transition: fill var(--t-med) var(--ease), opacity var(--t-med) var(--ease);
+}
+
+.mini-map__point.is-dim {
+  fill: var(--ink-faint);
+  opacity: 0.55;
+}
+
+.mini-map__focus {
+  fill: rgba(245, 197, 24, 0.18);
+  stroke: var(--accent);
+  stroke-width: 1.2;
+  transition: cx var(--t-slow) var(--ease), cy var(--t-slow) var(--ease),
+    r var(--t-slow) var(--ease);
+}
+
+/* ── Search modal ───────────────────────────────────────────────────────── */
+
+.search-modal {
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(60vh, 520px);
+  margin: 12vh auto auto;
+  padding: 0;
+  overflow: hidden;
+  display: none;
+  flex-direction: column;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--hairline-strong);
+  border-top: 3px solid var(--accent);
+  background: var(--panel-solid);
+  box-shadow: var(--shadow-pop);
+  color: var(--ink);
+}
+
+.search-modal[open] {
+  display: flex;
+  animation: modal-in var(--t-med) var(--ease-out) both;
+}
+
+.search-modal::backdrop {
+  background: var(--backdrop);
+  backdrop-filter: blur(3px);
+}
+
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.98);
+  }
+}
+
+.search-modal__bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--hairline);
+  flex: none;
+}
+
+.search-modal__icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  color: var(--ink-faint);
+}
+
+.search-modal__bar input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-family: var(--font-gta);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--ink);
+  outline: none;
+}
+
+.search-modal__bar input::placeholder {
+  color: var(--ink-faint);
+}
+
+.search-modal__bar input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.search-results {
+  overflow-y: auto;
+  padding: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--hairline-strong) transparent;
+}
+
+.search-row {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1.4fr) minmax(0, 1.1fr) minmax(0, 0.9fr);
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 12px;
+  border-radius: var(--r-sm);
+  text-align: left;
+}
+
+.search-row__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--dot);
+  box-shadow: 0 0 8px -1px var(--dot);
+}
+
+.search-row__name {
+  font-family: var(--font-gta);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-row__meta,
+.search-row__area {
+  font-size: 12.5px;
+  color: var(--ink-mute);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Sector hue as a leading tick, so a long result list scans by category. */
+.search-row__meta::before {
+  content: "";
+  display: inline-block;
+  width: 3px;
+  height: 11px;
+  margin-right: 7px;
+  border-radius: var(--r-pill);
+  background: var(--sector, var(--ink-faint));
+  vertical-align: -2px;
+}
+
+.search-row__area {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  text-align: right;
+}
+
+.search-row.is-active {
+  background: var(--accent-wash);
+  box-shadow: inset 0 0 0 1px var(--accent-line);
+}
+
+.search-row.is-active .search-row__name {
+  color: var(--ink);
+}
+
+.search-row.is-active .search-row__meta {
+  color: var(--ink-soft);
+}
+
+.search-row:active {
+  transform: translateY(1px);
+}
+
+.search-empty {
+  padding: 28px 16px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--ink-faint);
+}
+
+/* ── Area banner ───────────────────────────────────────────────────────────
+   GTA-style location text: when the camera crosses into a cluster, the area
+   name slams in top-centre in heavy condensed type, then clears away. */
+
+.area-banner {
+  position: absolute;
+  top: calc(var(--hud-pad) + 6px);
+  left: 50%;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(-50%) scale(1.12);
+  transition: opacity var(--t-med) var(--ease), transform var(--t-med) var(--ease-out);
+}
+
+.area-banner.is-showing {
+  opacity: 1;
+  transform: translateX(-50%) scale(1);
+}
+
+.area-banner__sub {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: var(--accent);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.95), 0 0 12px rgba(0, 0, 0, 0.9);
+}
+
+.area-banner__title {
+  font-family: var(--font-gta);
+  font-size: 38px;
+  font-weight: 800;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  line-height: 1.1;
+  padding-bottom: 6px;
+  border-bottom: 3px solid var(--accent);
+  color: #fff;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.95), 0 4px 14px rgba(0, 0, 0, 0.85),
+    0 0 28px rgba(245, 197, 24, 0.3);
+}
+
+/* ── Loader ─────────────────────────────────────────────────────────────── */
+
+.loader {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  align-content: center;
+  gap: 14px;
+  background: var(--bg);
+  transition: opacity var(--t-slow) var(--ease);
+}
+
+.loader.is-done {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.loader__mark {
+  width: 44px;
+  height: 44px;
+  color: var(--accent);
+  filter: drop-shadow(0 0 14px rgba(245, 197, 24, 0.55));
+}
+
+.loader__title {
+  font-family: var(--font-gta);
+  font-size: 46px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  line-height: 1.05;
+  color: var(--ink);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.9), 0 6px 20px rgba(0, 0, 0, 0.8);
+}
+
+.loader__title-accent {
+  color: var(--accent);
+}
+
+.loader__bar {
+  position: relative;
+  width: 300px;
+  height: 8px;
+  margin-top: 8px;
+  border: 1px solid var(--hairline-strong);
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.loader__bar i {
+  position: absolute;
+  inset: 0;
+  width: 42%;
+  background: var(--accent);
+  box-shadow: 0 0 12px rgba(245, 197, 24, 0.8);
+  animation: loadbar 1.1s var(--ease) infinite;
+}
+
+@keyframes loadbar {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(345%);
+  }
+}
+
+.loader__sub {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+
+/* ── Responsive ─────────────────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+  .hud-left {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    max-height: none;
+    padding: 0 var(--hud-pad) var(--hud-pad);
+    gap: 8px;
+  }
+
+  /* On a phone the card belongs above the rail, closer to the thumb. */
+  .hud-left {
+    flex-direction: column-reverse;
+  }
+
+  .rail {
+    padding: 14px 14px 12px;
+  }
+
+  .brand {
+    padding-bottom: 12px;
+  }
+
+  /* The cluster list becomes a horizontal chip scroller. */
+  .area-list {
+    flex-direction: row;
+    gap: 6px;
+    padding: 10px 4px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+  }
+
+  .area {
+    grid-template-columns: auto;
+    flex: none;
+    scroll-snap-align: start;
+    padding: 9px 13px;
+    background: var(--wash);
+  }
+
+  .area__number,
+  .area__chev {
+    display: none;
+  }
+
+  .area__label {
+    font-size: 13.5px;
+  }
+
+  .rail__foot {
+    display: none;
+  }
+
+  .mini-map {
+    display: none;
+  }
+
+  .area-banner {
+    top: calc(var(--hud-pad) + 4px);
+  }
+
+  .area-banner__title {
+    font-size: 24px;
+  }
+
+  /* Capped so the cluster chips below it stay above the fold. */
+  .detail-card {
+    max-height: 32vh;
+    overflow-y: auto;
+  }
+
+  /* Phones get the essentials; the full description costs too much height. */
+  .detail__body {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .detail__stats {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .search-trigger__label {
+    display: none;
+  }
+
+  .search-trigger kbd {
+    display: none;
+  }
+
+  .map-label--place,
+  .map-label--landmark {
+    display: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .search-row {
+    grid-template-columns: 8px minmax(0, 1fr) minmax(0, 0.8fr);
+  }
+
+  .search-row__area {
+    display: none;
+  }
+}
+
+/* ── Reduced motion ─────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── NYC-atlas glass chrome ─────────────────────────────────────────────────
+   Applied last so it wins the cascade over the component-level border and
+   box-shadow rules above: every panel gets a hairline light border and an
+   inset top highlight so it reads as frosted chrome over the board. */
+
+.detail-card,
+.search-trigger,
+.icon-btn,
+.search-modal {
+  border-color: var(--glass-border);
+}
+
+.search-modal,
+.rail {
+  border-top-color: var(--accent);
+}
+
+.rail,
+.detail-card,
+.search-trigger,
+.icon-btn {
+  box-shadow: var(--shadow-panel), inset 0 1px 0 var(--glass-highlight);
+}
+
+.search-modal {
+  box-shadow: var(--shadow-pop), inset 0 1px 0 var(--glass-highlight);
+}
